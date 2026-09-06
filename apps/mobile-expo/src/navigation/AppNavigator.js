@@ -1,5 +1,4 @@
 import React from "react";
-import { View, StyleSheet } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -52,13 +51,11 @@ function HomeTabs() {
         options={{
           tabBarLabel: "SOS",
           tabBarIcon: ({ focused, color }) => (
-            <View style={styles.sosTabIcon}>
-              <Ionicons
-                name={focused ? "alert-circle" : "alert-circle-outline"}
-                size={28}
-                color={focused ? "#EF4444" : "#8A8D91"}
-              />
-            </View>
+            <Ionicons
+              name={focused ? "alert-circle" : "alert-circle-outline"}
+              size={26}
+              color={focused ? "#EF4444" : "#8A8D91"}
+            />
           ),
         }}
       />
@@ -93,22 +90,3 @@ export default function AppNavigator() {
     </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  sosTabIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: -8,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    borderWidth: 1,
-    borderColor: "#E5E5E5",
-  },
-});
