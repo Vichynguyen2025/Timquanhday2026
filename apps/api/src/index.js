@@ -12,6 +12,7 @@ import conversationRoutes from './routes/conversations.js';
 import messageRoutes from './routes/messages.js';
 import locationRoutes from './routes/location.js';
 import notificationRoutes from './routes/notifications.js';
+import uploadRoutes from './routes/upload.js';
 import postRoutes from './routes/posts.js';
 
 const app = express();
@@ -51,6 +52,7 @@ app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/location', locationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/upload', uploadRoutes);
 app.use('/api/posts', postRoutes);
 
 // Socket.IO

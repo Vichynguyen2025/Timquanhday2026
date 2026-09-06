@@ -4,7 +4,7 @@ import { setUserOnline, setUserOffline, setTyping, clearTyping } from './redis.j
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 
-const onlineUsers = new Map(); // userId -> Set<socketId> (in-memory backup)
+const onlineUsers = new Map();
 
 export function setupSocket(io) {
   io.on('connection', (socket) => {
@@ -19,56 +19,59 @@ export function setupSocket(io) {
       return;
     }
 
-    // ─── Presence: track sockets per user ──────────
+    // ─── Presence ──────────────────────────────────
     if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
     onlineUsers.get(userId).add(socket.id);
-
-    // Redis presence
     setUserOnline(userId, 120).catch(() => {});
-    // MySQL backup (last_seen only)
-    query('UPDATE users SET is_online = 1, last_seen = NOW() WHERE id = ?', [userId]);
+    query('UPDATE users SET last_seen = NOW() WHERE id = ?', [userId]);
 
-    // Broadcast online to others
     if (onlineUsers.get(userId).size === 1) {
       socket.broadcast.emit('user:online', { userId });
     }
-
-    // Join user room
     socket.join(`user:${userId}`);
 
-    // ─── Heartbeat (extends Redis TTL) ─────────────
     socket.on('heartbeat', () => {
       setUserOnline(userId, 120).catch(() => {});
       query('UPDATE users SET last_seen = NOW() WHERE id = ?', [userId]);
     });
 
-    // ─── Send message with dedup + ACK ─────────────
+    // ─── Message: Send (with ACK, no self-broadcast) ─
     socket.on('message:send', async (data, ack) => {
       const ackFn = typeof ack === 'function' ? ack : () => {};
       try {
-        const { conversationId, content, receiverId, type = 'text', replyToId, tempId } = data;
-        if (!conversationId || !content) {
+        const { conversationId, content, receiverId, type = 'text', replyToId, tempId, attachmentUrl, attachmentName, attachmentSize } = data;
+        if (!conversationId || (!content && !attachmentUrl)) {
           return ackFn({ success: false, error: 'Missing required fields', tempId });
         }
 
-        let messageId;
+        // Dedup: check if already processed (retry safety)
         if (tempId) {
-          // Dedup: check if already processed
           const existing = await query(
             'SELECT id FROM messages WHERE sender_id = ? AND client_temp_id = ?',
             [userId, tempId]
           );
           if (existing.length > 0) {
-            // Message already exists — return existing ID
+            // Already exists — return existing, do NOT re-insert or re-broadcast
             return ackFn({ success: true, messageId: existing[0].id, tempId, duplicate: true });
           }
         }
 
-        // Create message with client_temp_id for dedup
-        messageId = crypto.randomUUID();
+        const messageId = crypto.randomUUID();
+        const msgType = attachmentUrl ? 'image' : type;
+
+        // Build metadata JSON for image attachments
+        let metadata = null;
+        if (attachmentUrl) {
+          metadata = JSON.stringify({
+            attachmentUrl,
+            attachmentName: attachmentName || null,
+            attachmentSize: attachmentSize || null,
+          });
+        }
+
         await query(
-          'INSERT INTO messages (id, conversation_id, sender_id, content, type, reply_to_id, client_temp_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [messageId, conversationId, userId, content, type, replyToId || null, tempId || null]
+          'INSERT INTO messages (id, conversation_id, sender_id, content, type, metadata, reply_to_id, client_temp_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [messageId, conversationId, userId, content || '', msgType, metadata, replyToId || null, tempId || null]
         );
 
         // Get sender info
@@ -77,8 +80,9 @@ export function setupSocket(io) {
           id: messageId,
           conversation_id: conversationId,
           sender_id: userId,
-          content,
-          type,
+          content: content || '',
+          type: msgType,
+          metadata: metadata ? JSON.parse(metadata) : null,
           reply_to_id: replyToId || null,
           is_deleted: false,
           reactions: [],
@@ -87,6 +91,7 @@ export function setupSocket(io) {
           sender_name: user[0]?.name || 'Unknown',
           sender_avatar: user[0]?.avatar || null,
           status: 'sent',
+          client_temp_id: tempId || null,
         };
 
         // Get reply preview
@@ -95,22 +100,22 @@ export function setupSocket(io) {
           if (reply.length) message.reply_preview = reply[0];
         }
 
-        // Broadcast to conversation room
-        io.to(`conversation:${conversationId}`).emit('message:new', message);
+        // Broadcast to conversation room EXCEPT sender (sender gets ACK)
+        socket.to(`conversation:${conversationId}`).emit('message:new', message);
 
-        // Also notify specific user (for notification when not in conversation)
+        // Notify specific user if needed
         if (receiverId) {
           io.to(`user:${receiverId}`).emit('message:new', message);
-          await createNotification(receiverId, 'message', 'Tin nhắn mới', content, { conversationId });
+          await createNotification(receiverId, 'message', 'Tin nhắn mới', content || 'Đã gửi ảnh', { conversationId });
           io.to(`user:${receiverId}`).emit('notification:new', {
-            type: 'message', title: 'Tin nhắn mới', body: content, data: { conversationId }
+            type: 'message', title: 'Tin nhắn mới', body: content || 'Đã gửi ảnh', data: { conversationId }
           });
         }
 
         // Update conversation last message
-        await query('UPDATE conversations SET last_message = ?, last_message_at = NOW() WHERE id = ?', [content, conversationId]);
+        await query('UPDATE conversations SET last_message = ?, last_message_at = NOW() WHERE id = ?', [content || '📷 Ảnh', conversationId]);
 
-        // ACK sender with message ID
+        // ACK sender with real message ID — sender does NOT get message:new
         ackFn({ success: true, messageId, tempId });
       } catch (err) {
         console.error('[Socket] message:send error:', err);
@@ -118,7 +123,7 @@ export function setupSocket(io) {
       }
     });
 
-    // ─── Delete message ────────────────────────────
+    // ─── Delete ──────────────────────────────────
     socket.on('message:delete', async (data) => {
       try {
         const { messageId, conversationId } = data;
@@ -132,7 +137,7 @@ export function setupSocket(io) {
       }
     });
 
-    // ─── Reaction ──────────────────────────────────
+    // ─── Reaction ────────────────────────────────
     socket.on('message:react', async (data) => {
       try {
         const { messageId, conversationId, emoji } = data;
@@ -153,11 +158,10 @@ export function setupSocket(io) {
           await query('INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
             [messageId, userId, emoji]);
           if (msg[0].sender_id !== userId) {
-            await createNotification(msg[0].sender_id, 'like', 'Cảm xúc tin nhắn', `Đã bày tỏ cảm xúc ${emoji}`, { messageId });
+          await createNotification(msg[0].sender_id, 'like', 'Cảm xúc tin nhắn', `Đã bày tỏ cảm xúc ${emoji}`, { messageId });
           }
         }
 
-        // Get updated reactions
         const reactions = await query(`
           SELECT mr.emoji, mr.user_id, u.name as user_name
           FROM message_reactions mr
@@ -171,42 +175,28 @@ export function setupSocket(io) {
       }
     });
 
-    // ─── Typing (debounced by frontend, no DB write) ─
+    // ─── Typing ─────────────────────────────────
     socket.on('typing:start', (data) => {
       if (!data.conversationId || !data.receiverId) return;
       setTyping(data.conversationId, userId, 5).catch(() => {});
-      io.to(`user:${data.receiverId}`).emit('user:typing', {
-        conversationId: data.conversationId,
-        userId
-      });
+      io.to(`user:${data.receiverId}`).emit('user:typing', { conversationId: data.conversationId, userId });
     });
 
     socket.on('typing:stop', (data) => {
       if (!data.receiverId) return;
       clearTyping(data.conversationId, userId).catch(() => {});
-      io.to(`user:${data.receiverId}`).emit('user:stop-typing', {
-        conversationId: data.conversationId,
-        userId
-      });
+      io.to(`user:${data.receiverId}`).emit('user:stop-typing', { conversationId: data.conversationId, userId });
     });
 
-    // Keep backward compat with old events
+    // Backward compat
     socket.on('user:typing', (data) => {
-      if (data.receiverId) {
-        io.to(`user:${data.receiverId}`).emit('user:typing', {
-          conversationId: data.conversationId, userId
-        });
-      }
+      if (data.receiverId) io.to(`user:${data.receiverId}`).emit('user:typing', { conversationId: data.conversationId, userId });
     });
     socket.on('user:stop-typing', (data) => {
-      if (data.receiverId) {
-        io.to(`user:${data.receiverId}`).emit('user:stop-typing', {
-          conversationId: data.conversationId, userId
-        });
-      }
+      if (data.receiverId) io.to(`user:${data.receiverId}`).emit('user:stop-typing', { conversationId: data.conversationId, userId });
     });
 
-    // ─── Location ────────────────────────────────
+    // ─── Location ───────────────────────────────
     socket.on('location:update', async (data) => {
       try {
         const { lat, lng } = data;
@@ -218,26 +208,21 @@ export function setupSocket(io) {
       } catch (err) {}
     });
 
-    // ─── Join conversation room ────────────────────
+    // ─── Conversation Join/Leave ────────────────
     socket.on('conversation:join', async (data) => {
       const { conversationId } = data;
       if (conversationId) {
         socket.join(`conversation:${conversationId}`);
-        // Mark as read
         await query(`INSERT IGNORE INTO message_reads (message_id, user_id)
           SELECT m.id, ? FROM messages m WHERE m.conversation_id = ? AND m.sender_id != ?`,
           [userId, conversationId, userId]);
-        io.to(`conversation:${conversationId}`).emit('conversation:read', { conversationId, userId });
       }
     });
 
     socket.on('conversation:leave', (data) => {
-      if (data.conversationId) {
-        socket.leave(`conversation:${data.conversationId}`);
-      }
+      if (data.conversationId) socket.leave(`conversation:${data.conversationId}`);
     });
 
-    // Keep backward compat
     socket.on('conversation:read', async (data) => {
       try {
         const { conversationId } = data;
@@ -249,14 +234,13 @@ export function setupSocket(io) {
       } catch (err) {}
     });
 
-    // ─── Disconnect ──────────────────────────────
+    // ─── Disconnect ─────────────────────────────
     socket.on('disconnect', async () => {
       const sockets = onlineUsers.get(userId);
       if (sockets) {
         sockets.delete(socket.id);
         if (sockets.size === 0) {
           onlineUsers.delete(userId);
-          // All sockets closed — user is offline
           await setUserOffline(userId).catch(() => {});
           query('UPDATE users SET is_online = 0, last_seen = NOW() WHERE id = ?', [userId]);
           io.emit('user:offline', { userId });
