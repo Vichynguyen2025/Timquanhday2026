@@ -5,6 +5,7 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import { initDatabase } from './models/db.js';
 import { setupSocket } from './services/socket.js';
+import { getRedis, getRedisAdapter } from './services/redis.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import conversationRoutes from './routes/conversations.js';
@@ -18,8 +19,21 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: process.env.CORS_ORIGIN?.split(',') || '*', credentials: true },
   path: '/ws',
-  addTrailingSlash: false
+  addTrailingSlash: false,
 });
+
+// Initialize Redis adapter
+(async () => {
+  try {
+    const adapter = await getRedisAdapter();
+    if (adapter) {
+      io.adapter(adapter);
+      console.log('[Redis] Socket.IO adapter ready');
+    }
+  } catch (err) {
+    console.log('[Redis] Adapter not available, running without (single-process mode)');
+  }
+})();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || '*', credentials: true }));
 app.use(express.json({ limit: '10mb' }));

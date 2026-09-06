@@ -5,10 +5,12 @@ import { useSocket } from '../contexts/SocketContext';
 import API from '../services/api';
 import {
   FiSend, FiSearch, FiArrowLeft, FiPaperclip, FiMessageCircle,
-  FiTrash2, FiSmile, FiCornerUpLeft, FiX, FiUser, FiClock, FiPhone, FiMapPin
+  FiTrash2, FiSmile, FiCornerUpLeft, FiX, FiUser, FiClock, FiPhone, FiMapPin, FiAlertCircle
 } from 'react-icons/fi';
 
 const EMOJIS = ['❤️', '😍', '😂', '😢', '😡', '👍', '🙏', '🔥', '🎉', '💯'];
+const MESSAGES_PER_PAGE = 50;
+const TYPING_DEBOUNCE = 800;
 
 function formatTime(dateStr) {
   if (!dateStr) return '';
@@ -43,30 +45,81 @@ export default function ChatPage() {
   const [replyTo, setReplyTo] = useState(null);
   const [showEmoji, setShowEmoji] = useState(null);
   const [convDetail, setConvDetail] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [newMsgIndicator, setNewMsgIndicator] = useState(false);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const typingTimerRef = useRef(null);
+  const isNearBottomRef = useRef(true);
 
-  const scrollToBottom = useCallback(() => {
-    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  const scrollToBottom = useCallback((smooth = true) => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+      setNewMsgIndicator(false);
+      isNearBottomRef.current = true;
+    }, 50);
   }, []);
+
+  // Check if user is near bottom
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const threshold = 150;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    if (isNearBottomRef.current) setNewMsgIndicator(false);
+
+    // Load more when scrolled to top
+    if (el.scrollTop < 50 && hasMore && !loadingMore && messages.length > 0) {
+      setLoadingMore(true);
+      const oldestMsg = messages[0];
+      API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}&before=${oldestMsg.created_at}`)
+        .then(({ data }) => {
+          if (data.length < MESSAGES_PER_PAGE) setHasMore(false);
+          setMessages(prev => [...data, ...prev]);
+          // Preserve scroll position
+          const prevHeight = el.scrollHeight;
+          requestAnimationFrame(() => {
+            el.scrollTop = el.scrollHeight - prevHeight;
+          });
+        })
+        .catch(() => {})
+        .finally(() => setLoadingMore(false));
+    }
+  }, [activeConvId, hasMore, loadingMore, messages]);
 
   // Fetch conversations
   useEffect(() => {
     API.get('/conversations').then(({ data }) => setConversations(data)).catch(() => {});
   }, [activeConvId]);
 
-  // Fetch messages + conv detail
+  // Fetch messages + join room
   useEffect(() => {
     if (activeConvId) {
-      API.get(`/messages/${activeConvId}`).then(({ data }) => {
-        setMessages(data);
-        scrollToBottom();
-      }).catch(() => {});
+      setMessages([]);
+      setHasMore(true);
+      setLoadingMore(false);
+      setNewMsgIndicator(false);
+
+      API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}`)
+        .then(({ data }) => {
+          if (data.length < MESSAGES_PER_PAGE) setHasMore(false);
+          setMessages(data);
+          scrollToBottom(false);
+        }).catch(() => {});
+
       API.get(`/conversations/${activeConvId}`).then(({ data }) => setConvDetail(data)).catch(() => {});
-      // Mark as read
-      socket?.emit('conversation:read', { conversationId: activeConvId });
-      // Clear local unread count
+
+      // Join conversation room
+      socket?.emit('conversation:join', { conversationId: activeConvId });
+
+      // Clear unread immediately
       setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, unread_count: 0 } : c));
+
+      return () => {
+        socket?.emit('conversation:leave', { conversationId: activeConvId });
+      };
     }
   }, [activeConvId, socket, scrollToBottom]);
 
@@ -77,25 +130,39 @@ export default function ChatPage() {
     socket.on('message:new', (msg) => {
       if (msg.conversation_id === activeConvId) {
         setMessages(prev => {
-          // Deduplicate: check if already exists (optimistic)
+          // Dedup: check if already exists (by real ID or tempId)
           if (prev.find(m => m.id === msg.id)) return prev;
+          // Replace temp message if exists
+          if (msg.replaces_temp_id) {
+            return prev.map(m => m.id === msg.replaces_temp_id ? { ...msg, status: 'sent' } : m);
+          }
           return [...prev, msg];
         });
-        scrollToBottom();
+        if (isNearBottomRef.current) {
+          scrollToBottom(true);
+        } else {
+          setNewMsgIndicator(true);
+        }
       }
       // Update conversation list
-      setConversations(prev => prev.map(c => {
-        if (c.id === msg.conversation_id) {
-          return { ...c, last_message: msg.content, last_message_at: msg.created_at };
-        }
-        return c;
-      }));
-      // Sort conversations by last message
-      setConversations(prev => [...prev].sort((a, b) => {
-        const aTime = new Date(a.last_message_at || 0).getTime();
-        const bTime = new Date(b.last_message_at || 0).getTime();
-        return bTime - aTime;
-      }));
+      setConversations(prev => {
+        const updated = prev.map(c => {
+          if (c.id === msg.conversation_id) {
+            return {
+              ...c,
+              last_message: msg.content,
+              last_message_at: msg.created_at,
+              unread_count: activeConvId === msg.conversation_id ? 0 : (c.unread_count || 0) + 1,
+            };
+          }
+          return c;
+        });
+        return updated.sort((a, b) => {
+          const aTime = new Date(a.last_message_at || 0).getTime();
+          const bTime = new Date(b.last_message_at || 0).getTime();
+          return bTime - aTime;
+        });
+      });
     });
 
     socket.on('message:deleted', ({ messageId }) => {
@@ -113,20 +180,40 @@ export default function ChatPage() {
       setTyping(prev => ({ ...prev, [conversationId]: false }));
     });
 
+    // Handle ACK for sent messages
+    socket.on('message:ack', ({ tempId, messageId, success }) => {
+      if (success && tempId) {
+        // Replace temp message with real ID
+        setMessages(prev => prev.map(m => {
+          if (m.id === tempId) return { ...m, id: messageId, status: 'sent' };
+          return m;
+        }));
+      } else if (!success && tempId) {
+        setMessages(prev => prev.map(m => {
+          if (m.id === tempId) return { ...m, status: 'failed' };
+          return m;
+        }));
+      }
+    });
+
     return () => {
       socket.off('message:new');
       socket.off('message:deleted');
       socket.off('message:reaction');
       socket.off('user:typing');
       socket.off('user:stop-typing');
+      socket.off('message:ack');
     };
   }, [socket, user, activeConvId, scrollToBottom]);
 
+  // Send message with optimistic update + ACK
   const sendMessage = (e) => {
     e?.preventDefault();
     if (!text.trim() || !activeConvId) return;
 
-    const tempId = 'temp-' + Date.now();
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const receiverId = convDetail?.members?.find(m => m.id !== user?.id)?.id;
+
     const optimisticMsg = {
       id: tempId,
       conversation_id: activeConvId,
@@ -140,24 +227,45 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
       sender_name: user?.name || 'You',
       sender_avatar: null,
+      status: 'sending',
     };
 
     // Optimistic update
     setMessages(prev => [...prev, optimisticMsg]);
-    scrollToBottom();
+    scrollToBottom(true);
 
+    // Send with ACK callback
     socket?.emit('message:send', {
       conversationId: activeConvId,
       content: text.trim(),
       type: 'text',
-      receiverId: convDetail?.members?.find(m => m.id !== user?.id)?.id,
+      receiverId,
       replyToId: replyTo?.id || null,
       tempId,
+    }, (response) => {
+      if (response?.success) {
+        // Replace temp message with real message
+        setMessages(prev => prev.map(m => {
+          if (m.id === tempId) return { ...m, id: response.messageId, status: 'sent' };
+          return m;
+        }));
+      } else if (response?.duplicate) {
+        // Already exists, replace with real ID
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+      } else {
+        // Mark as failed
+        setMessages(prev => prev.map(m => {
+          if (m.id === tempId) return { ...m, status: 'failed' };
+          return m;
+        }));
+      }
     });
 
     setText('');
     setReplyTo(null);
-    socket?.emit('user:stop-typing', { conversationId: activeConvId });
+    // Stop typing
+    socket?.emit('typing:stop', { conversationId: activeConvId, receiverId });
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
   };
 
   const handleKeyDown = (e) => {
@@ -167,15 +275,26 @@ export default function ChatPage() {
     }
   };
 
+  // Debounced typing
   const handleTyping = (val) => {
     setText(val);
-    socket?.emit('user:typing', {
-      conversationId: activeConvId,
-      receiverId: convDetail?.members?.find(m => m.id !== user?.id)?.id
-    });
-    clearTimeout(window.typingTimeout);
-    window.typingTimeout = setTimeout(() => {
-      socket?.emit('user:stop-typing', { conversationId: activeConvId });
+    if (!activeConvId) return;
+
+    const receiverId = convDetail?.members?.find(m => m.id !== user?.id)?.id;
+    if (!receiverId) return;
+
+    // Clear existing timer
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+
+    // Only emit typing:start if we haven't recently
+    if (!window._lastTypingEmit || Date.now() - window._lastTypingEmit > TYPING_DEBOUNCE) {
+      socket?.emit('typing:start', { conversationId: activeConvId, receiverId });
+      window._lastTypingEmit = Date.now();
+    }
+
+    // Set timer to stop typing after inactivity
+    typingTimerRef.current = setTimeout(() => {
+      socket?.emit('typing:stop', { conversationId: activeConvId, receiverId });
     }, 2000);
   };
 
@@ -186,6 +305,16 @@ export default function ChatPage() {
   const toggleReaction = (msgId, emoji) => {
     socket?.emit('message:react', { messageId: msgId, conversationId: activeConvId, emoji });
     setShowEmoji(null);
+  };
+
+  const retryMessage = (msg) => {
+    if (!msg.id?.startsWith('temp_')) return;
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    // Re-populate input
+    setText(msg.content);
+    if (msg.reply_to_id) {
+      setReplyTo({ id: msg.reply_to_id, content: msg.reply_preview?.content || '', sender_id: msg.reply_preview?.sender_id || '' });
+    }
   };
 
   const selectConversation = (convId) => {
@@ -206,9 +335,18 @@ export default function ChatPage() {
     return acc;
   }, {});
 
+  const statusIcon = (status) => {
+    switch (status) {
+      case 'sending': return <span className="text-[10px] text-primary-200">○</span>;
+      case 'sent': return <span className="text-[10px] text-primary-200">✓✓</span>;
+      case 'failed': return <FiAlertCircle size={12} className="text-red-300" />;
+      default: return null;
+    }
+  };
+
   return (
     <div className="h-full flex bg-white">
-      {/* ====== LEFT PANEL: Conversation List (always visible on desktop) ====== */}
+      {/* LEFT: Conversation List */}
       <div className="w-72 xl:w-80 border-r border-gray-200 flex flex-col bg-white flex-shrink-0">
         <div className="p-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
@@ -232,15 +370,12 @@ export default function ChatPage() {
           ) : filteredConv.map(c => {
             const isActive = c.id === activeConvId;
             return (
-              <button key={c.id}
-                onClick={() => selectConversation(c.id)}
+              <button key={c.id} onClick={() => selectConversation(c.id)}
                 className={`w-full flex items-center gap-3 p-3.5 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left ${
                   isActive ? 'bg-primary-50 border-l-4 border-l-primary-500' : ''
                 }`}>
                 <div className="relative flex-shrink-0">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                    isActive ? 'bg-primary-100' : 'bg-gray-100'
-                  }`}>
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isActive ? 'bg-primary-100' : 'bg-gray-100'}`}>
                     <span className={`font-bold text-lg ${isActive ? 'text-primary-600' : 'text-gray-500'}`}>
                       {(c.display_name || '?')[0]?.toUpperCase()}
                     </span>
@@ -254,9 +389,7 @@ export default function ChatPage() {
                       {c.last_message_at ? formatTime(c.last_message_at) : ''}
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500 truncate mt-0.5">
-                    {c.last_message || 'Chưa có tin nhắn'}
-                  </p>
+                  <p className="text-sm text-gray-500 truncate mt-0.5">{c.last_message || 'Chưa có tin nhắn'}</p>
                 </div>
                 {c.unread_count > 0 && (
                   <span className="bg-primary-500 text-white text-[11px] font-bold min-w-[20px] h-5 rounded-full flex items-center justify-center px-1.5">
@@ -269,11 +402,10 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* ====== CENTER: Chat Detail ====== */}
+      {/* CENTER: Chat */}
       <div className="flex-1 flex flex-col min-w-0">
         {activeConvId ? (
           <>
-            {/* Header */}
             <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center gap-3 flex-shrink-0">
               <button onClick={() => window.location.href = '/chat'} className="lg:hidden p-1 -ml-1 hover:bg-gray-100 rounded-lg">
                 <FiArrowLeft size={22} />
@@ -295,7 +427,17 @@ export default function ChatPage() {
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 bg-gray-50" id="chat-messages">
+            <div className="flex-1 overflow-y-auto px-4 py-4 bg-gray-50" ref={messagesContainerRef} onScroll={handleScroll}>
+              {loadingMore && (
+                <div className="flex justify-center py-3">
+                  <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {!hasMore && messages.length > 0 && (
+                <div className="flex justify-center mb-3">
+                  <span className="text-[11px] text-gray-400">— Đã xem tất cả tin nhắn —</span>
+                </div>
+              )}
               {Object.entries(groupedMessages).map(([date, msgs]) => (
                 <div key={date}>
                   <div className="flex justify-center my-3">
@@ -308,27 +450,23 @@ export default function ChatPage() {
                       acc[r.emoji] = (acc[r.emoji] || 0) + 1;
                       return acc;
                     }, {}) || {};
-                    const isTemp = msg.id?.startsWith('temp-');
+                    const isTemp = msg.id?.startsWith('temp_');
+                    const isFailed = msg.status === 'failed';
 
                     return (
                       <div key={msg.id} className={`group flex mb-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[75%] ${isMine ? 'items-end' : 'items-start'}`}>
-                          {/* Reply preview */}
                           {msg.reply_preview && !msg.reply_preview.is_deleted && (
-                            <div className={`mb-1 px-3 py-1.5 rounded-lg text-xs ${
-                              isMine ? 'bg-primary-400/20' : 'bg-gray-200'
-                            }`}>
+                            <div className={`mb-1 px-3 py-1.5 rounded-lg text-xs ${isMine ? 'bg-primary-400/20' : 'bg-gray-200'}`}>
                               <div className="font-medium text-gray-600 text-[11px]">Đang trả lời</div>
                               <div className="text-gray-500 truncate max-w-[200px]">{msg.reply_preview.content}</div>
                             </div>
                           )}
-
-                          {/* Message bubble */}
                           <div className={`relative px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
                             isMine
                               ? 'bg-primary-500 text-white rounded-br-md'
                               : 'bg-white text-gray-800 rounded-bl-md shadow-sm'
-                          } ${isTemp ? 'opacity-70' : ''}`}>
+                          } ${isTemp ? 'opacity-70' : ''} ${isFailed ? 'ring-2 ring-red-300' : ''}`}>
                             {msg.is_deleted ? (
                               <span className="italic opacity-60">{msg.content}</span>
                             ) : (
@@ -338,10 +476,15 @@ export default function ChatPage() {
                               isMine ? 'text-primary-200 justify-end' : 'text-gray-400 justify-start'
                             }`}>
                               {msg.created_at ? formatTime(msg.created_at) : ''}
-                              {isMine && !msg.is_deleted && <span className="text-[10px]">{isTemp ? '○' : '✓✓'}</span>}
+                              {isMine && !msg.is_deleted && statusIcon(msg.status)}
                             </div>
+                            {isFailed && (
+                              <button onClick={() => retryMessage(msg)}
+                                className="absolute -bottom-5 right-0 text-[10px] text-red-400 hover:text-red-500 font-medium">
+                                Thử lại
+                              </button>
+                            )}
 
-                            {/* Actions on hover (only for non-temp, non-deleted) */}
                             {!msg.is_deleted && !isTemp && (
                               <div className={`absolute -top-8 hidden group-hover:flex gap-0.5 bg-white rounded-lg shadow-lg border p-1 z-20 ${
                                 isMine ? 'right-0' : 'left-0'
@@ -363,7 +506,6 @@ export default function ChatPage() {
                               </div>
                             )}
 
-                            {/* Emoji picker */}
                             {showEmoji === msg.id && (
                               <div className={`absolute -bottom-12 z-10 bg-white rounded-xl shadow-lg border p-2 flex gap-1 ${
                                 isMine ? 'right-0' : 'left-0'
@@ -372,15 +514,12 @@ export default function ChatPage() {
                                   <button key={e} onClick={() => toggleReaction(msg.id, e)}
                                     className={`w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg text-lg transition-transform hover:scale-125 ${
                                       userReaction?.emoji === e ? 'bg-primary-50 ring-1 ring-primary-300' : ''
-                                    }`}>
-                                    {e}
-                                  </button>
+                                    }`}>{e}</button>
                                 ))}
                               </div>
                             )}
                           </div>
 
-                          {/* Reactions display */}
                           {Object.keys(reactionCounts).length > 0 && (
                             <div className={`flex gap-1 -mt-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
                               <div className="bg-white rounded-full shadow-sm border px-1.5 py-0.5 flex gap-1 text-xs">
@@ -400,16 +539,19 @@ export default function ChatPage() {
               ))}
               {typing[activeConvId] && (
                 <div className="flex items-center gap-2 text-sm text-gray-400 italic mb-2">
-                  <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center">
-                    <span className="text-[10px] text-gray-500">...</span>
-                  </div>
-                  Đang nhập...
+                  <span className="animate-pulse">...</span> Đang nhập
                 </div>
               )}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Reply preview */}
+            {newMsgIndicator && (
+              <button onClick={() => scrollToBottom(true)}
+                className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-primary-500 text-white text-xs px-4 py-1.5 rounded-full shadow-lg hover:bg-primary-600 transition-all animate-bounce z-10">
+                Tin nhắn mới ↓
+              </button>
+            )}
+
             {replyTo && (
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
                 <FiCornerUpLeft size={14} className="text-primary-500" />
@@ -423,7 +565,6 @@ export default function ChatPage() {
               </div>
             )}
 
-            {/* Input */}
             <form onSubmit={sendMessage} className="p-4 bg-white border-t border-gray-200">
               <div className="flex items-end gap-3">
                 <button type="button" onClick={() => fileInputRef.current?.click()}
@@ -432,15 +573,10 @@ export default function ChatPage() {
                 </button>
                 <input ref={fileInputRef} type="file" className="hidden" />
                 <div className="flex-1 relative">
-                  <textarea
-                    value={text}
-                    onChange={e => handleTyping(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    rows={1}
+                  <textarea value={text} onChange={e => handleTyping(e.target.value)}
+                    onKeyDown={handleKeyDown} rows={1}
                     className="w-full px-4 py-2.5 bg-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 resize-none max-h-32"
-                    placeholder="Nhập tin nhắn..."
-                    style={{ minHeight: '42px' }}
-                  />
+                    placeholder="Nhập tin nhắn..." style={{ minHeight: '42px' }} />
                 </div>
                 <button type="submit" disabled={!text.trim()}
                   className="w-10 h-10 rounded-xl bg-primary-500 text-white flex items-center justify-center disabled:opacity-40 hover:bg-primary-600 transition-colors flex-shrink-0">
@@ -462,7 +598,7 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* ====== RIGHT PANEL: User Info (ALWAYS PINNED on desktop) ====== */}
+      {/* RIGHT: User Info */}
       <div className={`${activeConvId ? 'w-72 xl:w-80 border-l border-gray-200 flex flex-col flex-shrink-0' : 'hidden'}`}>
         {otherUser && (
           <>
@@ -472,9 +608,7 @@ export default function ChatPage() {
             <div className="flex-1 overflow-y-auto p-6">
               <div className="text-center mb-6">
                 <div className="w-20 h-20 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-3">
-                  <span className="text-3xl font-bold text-primary-600">
-                    {(otherUser.name || '?')[0]?.toUpperCase()}
-                  </span>
+                  <span className="text-3xl font-bold text-primary-600">{(otherUser.name || '?')[0]?.toUpperCase()}</span>
                 </div>
                 <h2 className="text-lg font-bold text-gray-900">{otherUser.name}</h2>
                 <div className="flex items-center justify-center gap-1.5 mt-1">
@@ -484,7 +618,6 @@ export default function ChatPage() {
                   </span>
                 </div>
               </div>
-
               <div className="space-y-4">
                 <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
                   <div className="flex items-center gap-3 text-sm text-gray-600">
@@ -506,14 +639,11 @@ export default function ChatPage() {
                     <FiClock size={18} className="text-gray-400" />
                     <div>
                       <p className="text-xs text-gray-400">Tham gia</p>
-                      <p className="font-medium text-gray-800">
-                        {otherUser.created_at ? formatDate(otherUser.created_at) : 'N/A'}
-                      </p>
+                      <p className="font-medium text-gray-800">{otherUser.created_at ? formatDate(otherUser.created_at) : 'N/A'}</p>
                     </div>
                   </div>
                 </div>
               </div>
-
               <div className="mt-6 flex gap-3">
                 <button className="flex-1 border-2 border-primary-500 text-primary-500 hover:bg-primary-50 font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
                   <FiPhone size={16} /> Gọi

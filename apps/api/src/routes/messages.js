@@ -5,11 +5,12 @@ import { createNotification } from '../utils/helpers.js';
 
 const router = Router();
 
-// Get messages in conversation
+// Get messages with cursor pagination
 router.get('/:conversationId', authenticate, async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { limit = 50, before } = req.query;
+    const limitNum = Math.min(parseInt(limit) || 50, 100);
 
     const messages = await query(`
       SELECT m.id, m.conversation_id, m.sender_id, m.content, m.type, m.metadata,
@@ -21,9 +22,9 @@ router.get('/:conversationId', authenticate, async (req, res) => {
       ${before ? 'AND m.created_at < ?' : ''}
       ORDER BY m.created_at DESC
       LIMIT ?
-    `, before ? [conversationId, before, parseInt(limit)] : [conversationId, parseInt(limit)]);
+    `, before ? [conversationId, before, limitNum] : [conversationId, limitNum]);
 
-    // Get reactions for these messages
+    // Get reactions
     if (messages.length > 0) {
       const msgIds = messages.map(m => m.id);
       const reactions = await query(`
@@ -33,7 +34,6 @@ router.get('/:conversationId', authenticate, async (req, res) => {
         WHERE mr.message_id IN (${msgIds.map(() => '?').join(',')})
       `, msgIds);
 
-      // Group reactions by message
       const reactionMap = {};
       for (const r of reactions) {
         if (!reactionMap[r.message_id]) reactionMap[r.message_id] = [];
@@ -70,7 +70,7 @@ router.get('/:conversationId', authenticate, async (req, res) => {
   }
 });
 
-// Delete message (soft delete)
+// Delete message
 router.delete('/:id', authenticate, async (req, res) => {
   try {
     const msg = await query('SELECT * FROM messages WHERE id = ? AND sender_id = ?', [req.params.id, req.user.id]);
@@ -91,24 +91,18 @@ router.post('/:id/reaction', authenticate, async (req, res) => {
     const msg = await query('SELECT * FROM messages WHERE id = ?', [req.params.id]);
     if (!msg.length) return res.status(404).json({ error: 'Message not found' });
 
-    // Check if reaction exists
     const existing = await query(
       'SELECT * FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
       [req.params.id, req.user.id, emoji]
     );
 
     if (existing.length) {
-      // Remove reaction
       await query('DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
         [req.params.id, req.user.id, emoji]);
       res.json({ action: 'removed', emoji });
     } else {
-      // Add reaction
-      await query(
-        'INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
-        [req.params.id, req.user.id, emoji]
-      );
-      // Notify
+      await query('INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
+        [req.params.id, req.user.id, emoji]);
       if (msg[0].sender_id !== req.user.id) {
         await createNotification(msg[0].sender_id, 'like', 'Cảm xúc tin nhắn', `${req.user.name || 'Ai đó'} đã bày tỏ cảm xúc ${emoji}`, { messageId: req.params.id });
       }
