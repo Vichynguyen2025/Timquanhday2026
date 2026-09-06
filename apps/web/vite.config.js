@@ -18,7 +18,6 @@ export default defineConfig({
     alias: {
       'react-router': path.resolve(__dirname, 'node_modules/react-router/dist/index.js'),
       'react-router-dom': path.resolve(__dirname, 'node_modules/react-router-dom/dist/index.js'),
-      '@remix-run/router': path.resolve(__dirname, 'node_modules/@remix-run/router/dist/router.js'),
     },
   },
   build: {
