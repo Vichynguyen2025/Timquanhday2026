@@ -1,0 +1,17 @@
+export const colors = {
+  primary: "#2563EB",
+  primaryLight: "#DBEAFE",
+  primaryDark: "#1D4ED8",
+  background: "#F9FAFB",
+  surface: "#FFFFFF",
+  text: "#111827",
+  textSecondary: "#6B7280",
+  textTertiary: "#9CA3AF",
+  border: "#E5E7EB",
+  error: "#EF4444",
+  success: "#22C55E",
+  online: "#22C55E",
+  chatBg: "#F3F4F6",
+  bubbleMine: "#2563EB",
+  bubbleOther: "#FFFFFF",
+};

@@ -1,0 +1,68 @@
+import React from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
+import LoginScreen from "../screens/LoginScreen";
+import RegisterScreen from "../screens/RegisterScreen";
+import ChatListScreen from "../screens/ChatListScreen";
+import ChatDetailScreen from "../screens/ChatDetailScreen";
+import FeedScreen from "../screens/FeedScreen";
+import LocationScreen from "../screens/LocationScreen";
+import NotificationsScreen from "../screens/NotificationsScreen";
+import ProfileScreen from "../screens/ProfileScreen";
+import { useAuth } from "../contexts/AuthContext";
+import { colors } from "../theme/colors";
+
+const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+function HomeTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={({ route }) => ({
+        tabBarIcon: ({ focused, color, size }) => {
+          let name;
+          if (route.name === "Chat") name = focused ? "chatbubbles" : "chatbubbles-outline";
+          else if (route.name === "Feed") name = focused ? "compass" : "compass-outline";
+          else if (route.name === "Location") name = focused ? "map" : "map-outline";
+          else if (route.name === "Notifications") name = focused ? "notifications" : "notifications-outline";
+          else if (route.name === "Profile") name = focused ? "person" : "person-outline";
+          return <Ionicons name={name} size={size} color={color} />;
+        },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textTertiary,
+        headerShown: false,
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+      })}
+    >
+      <Tab.Screen name="Chat" component={ChatListScreen} />
+      <Tab.Screen name="Feed" component={FeedScreen} />
+      <Tab.Screen name="Location" component={LocationScreen} />
+      <Tab.Screen name="Notifications" component={NotificationsScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
+    </Tab.Navigator>
+  );
+}
+
+export default function AppNavigator() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return (
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {user ? (
+          <>
+            <Stack.Screen name="Home" component={HomeTabs} />
+            <Stack.Screen name="ChatDetail" component={ChatDetailScreen} options={{ headerShown: true, title: "Chat", headerBackTitle: "Quay lại" }} />
+          </>
+        ) : (
+          <>
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+          </>
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}
