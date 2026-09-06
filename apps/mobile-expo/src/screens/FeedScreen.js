@@ -50,9 +50,11 @@ function MediaGrid({ images, onImagePress }) {
 
   if (count === 1) {
     return (
-      <TouchableOpacity activeOpacity={0.95} onPress={() => onImagePress(0)}>
-        <Image source={{ uri: images[0].url || images[0] }} style={{ width: W, height: 380, resizeMode: "cover" }} />
-      </TouchableOpacity>
+      <View style={{ paddingHorizontal: 12 }}>
+        <TouchableOpacity activeOpacity={0.95} onPress={() => onImagePress(0)}>
+          <Image source={{ uri: images[0].url || images[0] }} style={{ width: "100%", height: 380, resizeMode: "cover" }} />
+        </TouchableOpacity>
+      </View>
     );
   }
   if (count === 2) {
