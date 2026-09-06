@@ -9,7 +9,7 @@ import ChatListScreen from "../screens/ChatListScreen";
 import ChatDetailScreen from "../screens/ChatDetailScreen";
 import FeedScreen from "../screens/FeedScreen";
 import SOSScreen from "../screens/SOSScreen";
-import LocationScreen from "../screens/LocationScreen";
+import ExploreScreen from "../screens/ExploreScreen";
 import NotificationsScreen from "../screens/NotificationsScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import { useAuth } from "../contexts/AuthContext";
@@ -81,8 +81,8 @@ export default function AppNavigator() {
               options={{ headerShown: false, animation: "slide_from_right" }}
             />
             <Stack.Screen
-              name="Location"
-              component={LocationScreen}
+              name="Explore"
+              component={ExploreScreen}
               options={{ headerShown: false, animation: "slide_from_right" }}
             />
           </>

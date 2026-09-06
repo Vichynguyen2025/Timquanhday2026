@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "./src/contexts/AuthContext";
 import { SocketProvider } from "./src/contexts/SocketContext";
+import { LocationProvider } from "./src/contexts/LocationContext";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StyleSheet } from "react-native";
@@ -13,8 +14,10 @@ export default function App() {
       <SafeAreaProvider>
         <AuthProvider>
           <SocketProvider>
-            <AppNavigator />
-            <StatusBar style="auto" />
+            <LocationProvider>
+              <AppNavigator />
+              <StatusBar style="auto" />
+            </LocationProvider>
           </SocketProvider>
         </AuthProvider>
       </SafeAreaProvider>

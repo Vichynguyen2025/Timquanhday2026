@@ -10,6 +10,7 @@ import MapView, { Marker, Circle, UrlTile, PROVIDER_DEFAULT } from "react-native
 import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { colors } from "../theme/colors";
+import { useLocation } from "../contexts/LocationContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const RADII = [100, 200, 500, 1000, 5000];
@@ -148,6 +149,7 @@ function SOSCard({ item, onRespond, onPress, isOwner }) {
 // ─── Create SOS Modal ─────────────────────────────
 function CreateSOSModal({ visible, onClose, onSubmit }) {
   const insets = useSafeAreaInsets();
+  const { currentLocation: sharedLocation } = useLocation();
   const [categoryId, setCategoryId] = useState(null);
   const [description, setDescription] = useState("");
   const [radius, setRadius] = useState(1000);
@@ -162,18 +164,34 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
     if (visible) {
       submittedRef.current = false;
       (async () => {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") { setLocationName("Không có quyền truy cập vị trí"); return; }
-        const loc = await Location.getCurrentPositionAsync({});
-        setCurrentLoc(loc.coords);
-        const geocode = await Location.reverseGeocodeAsync(loc.coords);
-        if (geocode.length > 0) {
-          const a = geocode[0];
-          setLocationName([a.street, a.district, a.city, a.region].filter(Boolean).join(", ") || "Vị trí hiện tại");
-        } else setLocationName("Vị trí hiện tại");
+        // Use shared location from LocationContext if available
+        if (sharedLocation) {
+          setCurrentLoc({ latitude: sharedLocation.latitude, longitude: sharedLocation.longitude });
+          try {
+            const geocode = await Location.reverseGeocodeAsync({
+              latitude: sharedLocation.latitude,
+              longitude: sharedLocation.longitude,
+            });
+            if (geocode.length > 0) {
+              const a = geocode[0];
+              setLocationName([a.street, a.district, a.city, a.region].filter(Boolean).join(", ") || "Vị trí hiện tại");
+            } else setLocationName("Vị trí hiện tại");
+          } catch { setLocationName("Vị trí hiện tại"); }
+        } else {
+          // Fallback: request GPS directly
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== "granted") { setLocationName("Không có quyền truy cập vị trí"); return; }
+          const loc = await Location.getCurrentPositionAsync({});
+          setCurrentLoc(loc.coords);
+          const geocode = await Location.reverseGeocodeAsync(loc.coords);
+          if (geocode.length > 0) {
+            const a = geocode[0];
+            setLocationName([a.street, a.district, a.city, a.region].filter(Boolean).join(", ") || "Vị trí hiện tại");
+          } else setLocationName("Vị trí hiện tại");
+        }
       })();
     }
-  }, [visible]);
+  }, [visible, sharedLocation]);
 
   async function captureImage() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -295,6 +313,7 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
 // ─── Main SOS Screen ──────────────────────────────
 export default function SOSScreen() {
   const insets = useSafeAreaInsets();
+  const { currentLocation: sharedLocation } = useLocation();
   const [tab, setTab] = useState("radar");
   const [sosList, setSosList] = useState([]);
   const [mySos, setMySos] = useState([]);
@@ -312,7 +331,11 @@ export default function SOSScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   useFocusEffect(useCallback(() => {
-    fetchSOS(); fetchHelperProfile(); getLocation();
+    fetchSOS(); fetchHelperProfile();
+    // Use shared location from context if available
+    if (sharedLocation) {
+      setUserLocation({ latitude: sharedLocation.latitude, longitude: sharedLocation.longitude });
+    }
     const socket = getSocket();
     if (!socket) return;
     const onNew = (sos) => { setSosList(prev => { if (prev.find(s => s.id === sos.id)) return prev; return [sos, ...prev]; }); };

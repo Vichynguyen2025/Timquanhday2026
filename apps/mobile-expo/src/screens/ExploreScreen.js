@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Location from "expo-location";
 import api from "../services/api";
+import { useLocation } from "../contexts/LocationContext";
 import { colors } from "../theme/colors";
 
 const RADII = [100, 200, 500, 1000, 5000];
@@ -15,43 +15,18 @@ function formatDistance(m) {
   return `${(m / 1000).toFixed(1)} km`;
 }
 
-export default function LocationScreen() {
+export default function ExploreScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { currentLocation, gpsStatus } = useLocation();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [radius, setRadius] = useState(500);
-  const [gpsStatus, setGpsStatus] = useState("Đang xác định vị trí...");
-  const [currentLoc, setCurrentLoc] = useState(null);
   const mountedRef = useRef(true);
 
   useFocusEffect(useCallback(() => {
     fetchNearby();
-    updateUserLocation();
   }, [radius]));
-
-  async function updateUserLocation() {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setGpsStatus("Chưa có quyền truy cập vị trí");
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      if (!mountedRef.current) return;
-      setCurrentLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-      setGpsStatus(`📍 ${loc.coords.latitude.toFixed(4)}, ${loc.coords.longitude.toFixed(4)}`);
-
-      // Send location to backend
-      await api.post("/location/update", {
-        lat: loc.coords.latitude,
-        lng: loc.coords.longitude,
-        accuracy: loc.coords.accuracy || null,
-      });
-    } catch (e) {
-      if (mountedRef.current) setGpsStatus("Chưa lấy được vị trí");
-    }
-  }
 
   async function fetchNearby() {
     try {
@@ -63,21 +38,25 @@ export default function LocationScreen() {
 
   function onRefresh() {
     setRefreshing(true);
-    updateUserLocation().then(() => fetchNearby());
+    fetchNearby();
   }
 
   useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header with back button */}
       <View style={styles.header}>
-        <Text style={styles.title}>📍 Khám phá</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#000" />
+        </TouchableOpacity>
+        <Text style={styles.title}>Khám phá</Text>
       </View>
 
       {/* GPS status bar */}
       <View style={styles.gpsBar}>
-        <Ionicons name={gpsStatus.includes("📍") ? "location" : "locate-outline"} size={16} color={gpsStatus.includes("📍") ? colors.primary : "#9CA3AF"} />
-        <Text style={[styles.gpsText, gpsStatus.includes("📍") && { color: colors.primary }]}>{gpsStatus}</Text>
+        <Ionicons name={gpsStatus?.includes("📍") ? "location" : "locate-outline"} size={16} color={gpsStatus?.includes("📍") ? colors.primary : "#9CA3AF"} />
+        <Text style={[styles.gpsText, gpsStatus?.includes("📍") && { color: colors.primary }]}>{gpsStatus || "Đang xác định vị trí..."}</Text>
       </View>
 
       {/* Radius chips */}
@@ -132,7 +111,8 @@ export default function LocationScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  header: { paddingHorizontal: 20, paddingVertical: 12, backgroundColor: "#fff" },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#fff" },
+  backBtn: { padding: 4, marginRight: 8 },
   title: { fontSize: 24, fontWeight: "700", color: "#000" },
   gpsBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 6, backgroundColor: "#F9FAFB", gap: 6 },
   gpsText: { fontSize: 12, color: "#9CA3AF" },

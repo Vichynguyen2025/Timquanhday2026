@@ -490,7 +490,7 @@ export default function FeedScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.title}>Khám phá</Text>
         <View style={{ flexDirection: "row", gap: 4 }}>
-          <TouchableOpacity onPress={() => navigation?.navigate("Location")} style={styles.headerBtn}>
+          <TouchableOpacity onPress={() => navigation?.navigate("Explore")} style={styles.headerBtn}>
             <Ionicons name="location-outline" size={22} color="#000" />
           </TouchableOpacity>
         </View>
