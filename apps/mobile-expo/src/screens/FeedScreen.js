@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Image, Modal, TextInput, Alert, KeyboardAvoidingView, Platform, Dimensions, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -14,6 +14,13 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const RADII = [100, 200, 500, 1000, 5000];
 const PAGE_LIMIT = 10;
 const IMG_GAP = 3;
+
+// Deduplicate posts by id (ensures no duplicate keys in FlatList)
+function dedupPosts(arr) {
+  if (!arr || arr.length === 0) return arr || [];
+  const seen = new Set();
+  return arr.filter(p => { if (!p?.id || seen.has(p.id)) return false; seen.add(p.id); return true; });
+}
 
 function formatTime(d) {
   if (!d) return "";
@@ -167,6 +174,9 @@ export default function FeedScreen() {
   const cursorRef = useRef(null);
   const commentInputRef = useRef(null);
 
+  // Deduplicated posts for FlatList rendering (safety net against duplicate keys)
+  const dedupedPosts = useMemo(() => dedupPosts(posts), [posts]);
+
   // ─── Fetch posts ────────────────────────────────
   async function fetchPosts(loadMore = false) {
     if (loadMore) { if (loadingMore || !hasMore) return; setLoadingMore(true); }
@@ -195,7 +205,13 @@ export default function FeedScreen() {
     else { setPosts(postsCacheRef.current); setLoading(false); }
     const socket = getSocket();
     if (!socket) return;
-    const onPostNew = (post) => { setPosts((prev) => { if (prev.find((p) => p.id === post.id)) return prev; return [post, ...prev]; }); };
+    const onPostNew = (post) => {
+      if (!post?.id) return;
+      setPosts((prev) => {
+        if (prev.find((p) => p.id === post.id || p.client_temp_id === post.client_temp_id)) return prev;
+        return [post, ...prev];
+      });
+    };
     const onPostUpdated = (post) => { setPosts((prev) => prev.map((p) => p.id === post.id ? post : p)); };
     const onPostDeleted = ({ postId }) => { setPosts((prev) => prev.filter((p) => p.id !== postId)); };
     const onPostLiked = ({ postId, liked, post }) => {
@@ -426,8 +442,8 @@ export default function FeedScreen() {
         <View style={{ paddingTop: 40 }}><ActivityIndicator color={colors.primary} /></View>
       ) : (
         <FlatList
-          data={posts}
-          keyExtractor={(item) => item.id}
+          data={dedupedPosts}
+          keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : String(index)}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
           onEndReached={() => fetchPosts(true)}
