@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query, queryOne } from '../models/db.js';
 import { authenticate } from '../middleware/auth.js';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
 const router = Router();
@@ -26,7 +27,55 @@ router.patch('/me', authenticate, async (req, res) => {
     const { name, bio, avatar } = req.body;
     await query('UPDATE users SET name = COALESCE(?, name), bio = COALESCE(?, bio), avatar = COALESCE(?, avatar) WHERE id = ?',
       [name, bio, avatar, req.user.id]);
+    const user = await queryOne('SELECT id, name, email, phone, avatar, bio, location_enabled FROM users WHERE id = ?', [req.user.id]);
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Toggle location sharing
+router.patch('/location', authenticate, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' });
+    await query('UPDATE users SET location_enabled = ? WHERE id = ?', [enabled ? 1 : 0, req.user.id]);
+    res.json({ location_enabled: enabled });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Change password
+router.post('/change-password', authenticate, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Current and new password required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+
+    const user = await queryOne('SELECT password FROM users WHERE id = ?', [req.user.id]);
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) return res.status(400).json({ error: 'Current password is incorrect' });
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await query('UPDATE users SET password = ? WHERE id = ?', [hashed, req.user.id]);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get blocked users
+router.get('/blocked', authenticate, async (req, res) => {
+  try {
+    const blocked = await query(`
+      SELECT u.id, u.name, u.avatar, ub.created_at as blocked_at
+      FROM user_blocks ub
+      JOIN users u ON u.id = ub.blocked_id
+      WHERE ub.blocker_id = ?
+      ORDER BY ub.created_at DESC
+    `, [req.user.id]);
+    res.json(blocked);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -37,13 +86,10 @@ router.post('/:id/block', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     if (id === req.user.id) return res.status(400).json({ error: 'Cannot block yourself' });
-    
     const existing = await queryOne('SELECT * FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?', [req.user.id, id]);
     if (existing) return res.json({ blocked: true, message: 'Already blocked' });
-    
-    await query('INSERT INTO user_blocks (id, blocker_id, blocked_id) VALUES (?, ?, ?)', 
+    await query('INSERT INTO user_blocks (id, blocker_id, blocked_id) VALUES (?, ?, ?)',
       [crypto.randomUUID(), req.user.id, id]);
-    
     res.json({ blocked: true });
   } catch (err) {
     console.error('[Block] Error:', err);

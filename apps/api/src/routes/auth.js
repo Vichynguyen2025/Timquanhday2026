@@ -97,13 +97,50 @@ router.post('/logout', authenticate, async (req, res) => {
   }
 });
 
-// Get Me
+// Get Me (full profile)
 router.get('/me', authenticate, async (req, res) => {
   try {
-    const user = await queryOne('SELECT id, name, email, phone, avatar, bio, is_online, last_seen, created_at FROM users WHERE id = ?', [req.user.id]);
+    const user = await queryOne('SELECT id, name, email, phone, avatar, bio, location_enabled, is_online, last_seen, created_at FROM users WHERE id = ?', [req.user.id]);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+
+    // Get service profile (SOS provider settings)
+    const sp = await queryOne('SELECT * FROM service_profiles WHERE user_id = ?', [req.user.id]);
+
+    // Get stats
+    const [postCount] = await query('SELECT COUNT(*) as c FROM posts WHERE user_id = ?', [req.user.id]);
+    const [likeCount] = await query('SELECT COUNT(*) as c FROM post_likes WHERE user_id = ?', [req.user.id]);
+    const [saveCount] = await query('SELECT COUNT(*) as c FROM post_saves WHERE user_id = ?', [req.user.id]);
+    const [sosCount] = await query('SELECT COUNT(*) as c FROM sos_requests WHERE user_id = ?', [req.user.id]);
+    const [helpingCount] = await query('SELECT COUNT(*) as c FROM sos_responses WHERE provider_id = ?', [req.user.id]);
+
+    // Get SOS categories if provider
+    let categories = [];
+    if (sp) {
+      const catRows = await query(`
+        SELECT sc.id, sc.name FROM service_profile_categories spc
+        JOIN sos_categories sc ON sc.id = spc.category_id
+        WHERE spc.profile_id = ?
+      `, [sp.id]);
+      categories = catRows;
+    }
+
+    // Get blocked users count
+    const [blockedCount] = await query('SELECT COUNT(*) as c FROM user_blocks WHERE blocker_id = ?', [req.user.id]);
+
+    res.json({
+      ...user,
+      service_profile: sp ? { ...sp, categories } : null,
+      stats: {
+        posts: postCount?.c || 0,
+        likes: likeCount?.c || 0,
+        saves: saveCount?.c || 0,
+        sos_requests: sosCount?.c || 0,
+        sos_helping: helpingCount?.c || 0,
+        blocked: blockedCount?.c || 0,
+      },
+    });
   } catch (err) {
+    console.error('[Auth] Me error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

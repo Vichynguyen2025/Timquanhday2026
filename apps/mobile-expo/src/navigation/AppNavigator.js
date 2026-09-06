@@ -12,6 +12,9 @@ import SOSScreen from "../screens/SOSScreen";
 import ExploreScreen from "../screens/ExploreScreen";
 import NotificationsScreen from "../screens/NotificationsScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import EditProfileScreen from "../screens/EditProfileScreen";
+import ChangePasswordScreen from "../screens/ChangePasswordScreen";
+import BlockedUsersScreen from "../screens/BlockedUsersScreen";
 import { useAuth } from "../contexts/AuthContext";
 import { colors } from "../theme/colors";
 
@@ -75,16 +78,11 @@ export default function AppNavigator() {
         {user ? (
           <>
             <Stack.Screen name="Home" component={HomeTabs} />
-            <Stack.Screen
-              name="ChatDetail"
-              component={ChatDetailScreen}
-              options={{ headerShown: false, animation: "slide_from_right" }}
-            />
-            <Stack.Screen
-              name="Explore"
-              component={ExploreScreen}
-              options={{ headerShown: false, animation: "slide_from_right" }}
-            />
+            <Stack.Screen name="ChatDetail" component={ChatDetailScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="Explore" component={ExploreScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ animation: "slide_from_right" }} />
           </>
         ) : (
           <>
