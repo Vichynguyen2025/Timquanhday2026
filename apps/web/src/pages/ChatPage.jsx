@@ -6,22 +6,38 @@ import API from '../services/api';
 import {
   FiSend, FiSearch, FiArrowLeft, FiPaperclip, FiMessageCircle,
   FiTrash2, FiSmile, FiCornerUpLeft, FiX, FiUser, FiClock, FiPhone, FiMapPin,
-  FiAlertCircle, FiImage, FiXCircle, FiDownload, FiMaximize2
+  FiAlertCircle, FiImage, FiFile, FiCheck, FiCheckCircle
 } from 'react-icons/fi';
 
-const EMOJIS = ['❤️', '😍', '😂', '😢', '😡', '👍', '🙏', '🔥', '🎉', '💯'];
+// ─── Modern tech-style emoji set ────────────────
+const EMOJIS = [
+  '👍', '❤️', '🔥', '😂', '😍',
+  '🎉', '💯', '✨', '🚀', '🙌',
+  '👏', '😢', '😡', '💪', '🤝',
+];
+
 const MESSAGES_PER_PAGE = 50;
 const TYPING_DEBOUNCE = 800;
 
+// ─── Time formatter: full Vietnamese ─────────────
 function formatTime(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
   const now = new Date();
   const diff = now - d;
-  if (diff < 60000) return 'Vừa xong';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}p`;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (seconds < 10) return 'Vừa xong';
+  if (seconds < 60) return `${seconds} giây trước`;
+  if (minutes === 1) return '1 phút trước';
+  if (minutes < 60) return `${minutes} phút trước`;
+  if (hours === 1) return '1 giờ trước';
+  if (hours < 6) return `${hours} giờ trước`;
   if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
   if (diff < 86400000 * 2) return 'Hôm qua';
+  if (diff < 86400000 * 7) return `${Math.floor(diff / 86400000)} ngày trước`;
   return d.toLocaleDateString('vi-VN');
 }
 
@@ -64,6 +80,47 @@ async function uploadImage(file) {
   return res.json();
 }
 
+// ─── Status icon with read/delivered text ──────
+function StatusIcon({ status, isMine }) {
+  if (!isMine) return null;
+  switch (status) {
+    case 'sending':
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] text-primary-200">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary-200 animate-pulse" />
+          Đang gửi
+        </span>
+      );
+    case 'sent':
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] text-blue-200">
+          <FiCheck size={10} className="stroke-[2.5]" />
+          <FiCheck size={10} className="stroke-[2.5] -ml-2" />
+          Đã gửi
+        </span>
+      );
+    case 'delivered':
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] text-blue-200">
+          <FiCheck size={10} className="stroke-[2.5]" />
+          <FiCheck size={10} className="stroke-[2.5] -ml-2" />
+          Đã nhận
+        </span>
+      );
+    case 'read':
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] text-blue-300">
+          <FiCheckCircle size={10} className="fill-blue-300 stroke-white" strokeWidth={2} />
+          Đã xem
+        </span>
+      );
+    case 'failed':
+      return <FiAlertCircle size={12} className="text-red-300" title="Gửi thất bại" />;
+    default:
+      return null;
+  }
+}
+
 export default function ChatPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -71,7 +128,7 @@ export default function ChatPage() {
   const { user } = useAuth();
   const { socket, onlineUsers } = useSocket();
 
-  // ─── Persisted state (survives conversation switches) ─────
+  // ─── State ────────────────────────────────────
   const [conversations, setConversations] = useState([]);
   const [typing, setTyping] = useState({});
   const [search, setSearch] = useState('');
@@ -80,8 +137,6 @@ export default function ChatPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [convLoading, setConvLoading] = useState(false);
-
-  // ─── Ephemeral state (reset per switch) ──────────────────
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [showEmoji, setShowEmoji] = useState(null);
@@ -90,21 +145,21 @@ export default function ChatPage() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [docName, setDocName] = useState(null);
 
-  // ─── Refs (survive renders, survive switches) ────────────
+  // ─── Refs ─────────────────────────────────────
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
+  const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
   const typingTimerRef = useRef(null);
   const isNearBottomRef = useRef(true);
-
-  // In-memory caches
-  const messagesCacheRef = useRef(new Map());   // convId -> messages[]
-  const detailCacheRef = useRef(new Map());     // convId -> detail
-  const hasMoreCacheRef = useRef(new Map());    // convId -> boolean
+  const messagesCacheRef = useRef(new Map());
+  const detailCacheRef = useRef(new Map());
+  const hasMoreCacheRef = useRef(new Map());
   const prevConvRef = useRef(null);
 
-  // ─── Helpers ───────────────────────────────────────
   const scrollToBottom = useCallback((smooth = true) => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
@@ -126,16 +181,10 @@ export default function ChatPage() {
       API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}&before=${oldestMsg.created_at}`)
         .then(({ data }) => {
           const done = data.length < MESSAGES_PER_PAGE;
-          if (done) {
-            hasMoreCacheRef.current.set(activeConvId, false);
-            setHasMore(false);
-          }
+          if (done) { hasMoreCacheRef.current.set(activeConvId, false); setHasMore(false); }
           setMessages(prev => {
             const merged = [...data];
-            for (const m of prev) {
-              if (!merged.find(x => x.id === m.id)) merged.push(m);
-            }
-            // Update cache
+            for (const m of prev) { if (!merged.find(x => x.id === m.id)) merged.push(m); }
             messagesCacheRef.current.set(activeConvId, merged);
             return merged;
           });
@@ -147,69 +196,45 @@ export default function ChatPage() {
     }
   }, [activeConvId, hasMore, loadingMore, messages]);
 
-  // ─── Fetch conversations ─────────────────────────
   useEffect(() => {
     API.get('/conversations').then(({ data }) => setConversations(data)).catch(() => {});
   }, []);
 
-  // ─── Switch conversation handler ─────────────────
   const switchConversation = useCallback((convId) => {
     if (convId === activeConvId) return;
     navigate(`/chat/${convId}`, { replace: false });
   }, [activeConvId, navigate]);
 
-  // ─── Conversation switch effect ──────────────────
-  // This runs when activeConvId changes — NO reload, NO window.location
   useEffect(() => {
-    // Leave previous room
     if (prevConvRef.current && prevConvRef.current !== activeConvId) {
       socket?.emit('conversation:leave', { conversationId: prevConvRef.current });
     }
     prevConvRef.current = activeConvId;
     if (!activeConvId) return;
+    setReplyTo(null); setShowEmoji(null); setNewMsgIndicator(false);
+    setSelectedFile(null); setPreviewUrl(null); setSelectedDoc(null); setDocName(null); setText('');
 
-    // Clear ephemeral state
-    setReplyTo(null);
-    setShowEmoji(null);
-    setNewMsgIndicator(false);
-    setSelectedFile(null);
-    setPreviewUrl(null);
-    setText('');
-
-    // Load from cache instantly
     if (messagesCacheRef.current.has(activeConvId)) {
-      const cached = messagesCacheRef.current.get(activeConvId);
-      setMessages(cached);
+      setMessages(messagesCacheRef.current.get(activeConvId));
       setHasMore(hasMoreCacheRef.current.get(activeConvId) !== false);
       scrollToBottom(false);
     } else {
-      // No cache — show loading, fetch
-      setMessages([]);
-      setHasMore(true);
-      setConvLoading(true);
+      setMessages([]); setHasMore(true); setConvLoading(true);
     }
 
     if (detailCacheRef.current.has(activeConvId)) {
       setConvDetail(detailCacheRef.current.get(activeConvId));
-    } else {
-      setConvDetail(null);
-    }
+    } else { setConvDetail(null); }
 
-    // Join conversation room
     socket?.emit('conversation:join', { conversationId: activeConvId });
-
-    // Clear unread immediately
     setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, unread_count: 0 } : c));
 
-    // Background fetch (always refresh)
     API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}`)
       .then(({ data }) => {
         const done = data.length < MESSAGES_PER_PAGE;
         hasMoreCacheRef.current.set(activeConvId, !done);
         messagesCacheRef.current.set(activeConvId, data);
-        setMessages(data);
-        setHasMore(!done);
-        setConvLoading(false);
+        setMessages(data); setHasMore(!done); setConvLoading(false);
         scrollToBottom(false);
       }).catch(() => setConvLoading(false));
 
@@ -227,34 +252,24 @@ export default function ChatPage() {
 
     socket.on('message:new', (msg) => {
       if (msg.sender_id === user?.id) return;
-
-      // Update cache AND UI for active conversation
       if (msg.conversation_id === activeConvId) {
         setMessages(prev => {
           const updated = mergeIncomingMessage(prev, msg);
           messagesCacheRef.current.set(msg.conversation_id, updated);
           return updated;
         });
-        if (isNearBottomRef.current) {
-          scrollToBottom(true);
-        } else {
-          setNewMsgIndicator(true);
-        }
+        if (isNearBottomRef.current) { scrollToBottom(true); } else { setNewMsgIndicator(true); }
       } else if (messagesCacheRef.current.has(msg.conversation_id)) {
-        // Update cache even for inactive conversations
         const cached = messagesCacheRef.current.get(msg.conversation_id);
-        const updated = mergeIncomingMessage(cached, msg);
-        messagesCacheRef.current.set(msg.conversation_id, updated);
+        messagesCacheRef.current.set(msg.conversation_id, mergeIncomingMessage(cached, msg));
       }
-
-      // Update conversation list
       setConversations(prev => {
         const updated = prev.map(c => {
           if (c.id === msg.conversation_id) {
             const isActive = c.id === activeConvId;
             return {
               ...c,
-              last_message: msg.content || (msg.type === 'image' ? '📷 Ảnh' : msg.content),
+              last_message: msg.content || (msg.type === 'image' ? '📷 Ảnh' : (msg.type === 'file' ? '📎 File' : msg.content)),
               last_message_at: msg.created_at,
               unread_count: isActive ? 0 : (c.unread_count || 0) + 1,
             };
@@ -295,11 +310,8 @@ export default function ChatPage() {
     });
 
     return () => {
-      socket.off('message:new');
-      socket.off('message:deleted');
-      socket.off('message:reaction');
-      socket.off('user:typing');
-      socket.off('user:stop-typing');
+      socket.off('message:new'); socket.off('message:deleted'); socket.off('message:reaction');
+      socket.off('user:typing'); socket.off('user:stop-typing');
     };
   }, [socket, user, activeConvId, scrollToBottom]);
 
@@ -319,12 +331,11 @@ export default function ChatPage() {
       status: 'sending', client_temp_id: tempId,
     };
 
-    const addOptimistic = (prev) => {
+    setMessages(prev => {
       const updated = [...prev, optimisticMsg];
       messagesCacheRef.current.set(activeConvId, updated);
       return updated;
-    };
-    setMessages(addOptimistic);
+    });
     scrollToBottom(true);
 
     socket?.emit('message:send', {
@@ -332,14 +343,13 @@ export default function ChatPage() {
       replyToId: replyTo?.id || null, tempId,
     }, (response) => {
       if (response?.success && response?.message) {
-        const reconcile = (prev) => {
+        setMessages(prev => {
           const updated = mergeIncomingMessage(prev, { ...response.message, id: response.messageId, client_temp_id: tempId, status: 'sent' });
           messagesCacheRef.current.set(activeConvId, updated);
           return updated;
-        };
-        setMessages(reconcile);
+        });
         setConversations(prev => prev.map(c =>
-          c.id === activeConvId ? { ...c, last_message: response.message.content || (response.message.type === 'image' ? '📷 Ảnh' : ''), last_message_at: response.message.created_at } : c
+          c.id === activeConvId ? { ...c, last_message: response.message.content || (response.message.type === 'image' ? '📷 Ảnh' : (response.message.type === 'file' ? '📎 File' : '')), last_message_at: response.message.created_at } : c
         ));
       } else if (response?.success) {
         setMessages(prev => {
@@ -453,7 +463,7 @@ export default function ChatPage() {
     }, 2000);
   };
 
-  const handleFileSelect = (e) => {
+  const handleImageSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
     setSelectedFile(file);
@@ -461,10 +471,23 @@ export default function ChatPage() {
     e.target.value = '';
   };
 
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedDoc(file);
+    setDocName(file.name);
+    e.target.value = '';
+  };
+
   const cancelFile = () => {
     setSelectedFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
+  };
+
+  const cancelDoc = () => {
+    setSelectedDoc(null);
+    setDocName(null);
   };
 
   const deleteMessage = (msgId) => {
@@ -505,16 +528,6 @@ export default function ChatPage() {
     acc[date].push(msg);
     return acc;
   }, {});
-
-  const statusIcon = (status) => {
-    switch (status) {
-      case 'sending': return <span className="text-[10px] text-primary-200">○</span>;
-      case 'uploading': return <span className="text-[10px] text-primary-200 animate-pulse">↑</span>;
-      case 'sent': return <span className="text-[10px] text-primary-200">✓✓</span>;
-      case 'failed': return <FiAlertCircle size={12} className="text-red-300" />;
-      default: return null;
-    }
-  };
 
   return (
     <div className="h-full flex bg-white">
@@ -560,7 +573,7 @@ export default function ChatPage() {
                     <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{c.last_message_at ? formatTime(c.last_message_at) : ''}</span>
                   </div>
                   <p className="text-sm text-gray-500 truncate mt-0.5">
-                    {c.last_message?.startsWith('📷') ? c.last_message : (c.last_message || 'Chưa có tin nhắn')}
+                    {c.last_message?.startsWith('📷') || c.last_message?.startsWith('📎') ? c.last_message : (c.last_message || 'Chưa có tin nhắn')}
                   </p>
                 </div>
                 {c.unread_count > 0 && (
@@ -594,11 +607,10 @@ export default function ChatPage() {
               </div>
             </div>
 
+            {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 bg-gray-50" ref={messagesContainerRef} onScroll={handleScroll}>
               {convLoading && messages.length === 0 && (
-                <div className="flex justify-center py-12">
-                  <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
-                </div>
+                <div className="flex justify-center py-12"><div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /></div>
               )}
               {loadingMore && <div className="flex justify-center py-3"><div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /></div>}
               {!hasMore && messages.length > 0 && (
@@ -614,10 +626,13 @@ export default function ChatPage() {
                     const isTemp = msg.id?.startsWith('temp_');
                     const isFailed = msg.status === 'failed';
                     const isImage = msg.type === 'image';
+                    const isFile = msg.type === 'file';
                     const attachmentUrl = msg.metadata?.attachmentUrl || (isImage && msg.content?.startsWith('/uploads/') ? msg.content : null);
+                    // Image/file messages: no bubble background
+                    const noBubble = isImage || isFile;
 
                     return (
-                      <div key={msg.id} className={`group flex mb-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                      <div key={msg.id} className={`group flex mb-3 ${isMine ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[75%] ${isMine ? 'items-end' : 'items-start'}`}>
                           {msg.reply_preview && !msg.reply_preview.is_deleted && (
                             <div className={`mb-1 px-3 py-1.5 rounded-lg text-xs ${isMine ? 'bg-primary-400/20' : 'bg-gray-200'}`}>
@@ -625,39 +640,67 @@ export default function ChatPage() {
                               <div className="text-gray-500 truncate max-w-[200px]">{msg.reply_preview.content}</div>
                             </div>
                           )}
-                          <div className={`relative px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                            isMine ? 'bg-primary-500 text-white rounded-br-md' : 'bg-white text-gray-800 rounded-bl-md shadow-sm'
+                          <div className={`relative ${noBubble ? '' : 'px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed '}${
+                            !noBubble ? (isMine ? 'bg-primary-500 text-white rounded-br-md' : 'bg-white text-gray-800 rounded-bl-md shadow-sm') : ''
                           } ${isTemp ? 'opacity-70' : ''} ${isFailed ? 'ring-2 ring-red-300' : ''}`}>
                             {msg.is_deleted ? (
-                              <span className="italic opacity-60">{msg.content}</span>
+                              <span className="italic opacity-60 px-3.5 py-2.5 inline-block">{msg.content}</span>
                             ) : isImage && attachmentUrl ? (
+                              // ── Image message: no bubble ──
                               <div className="max-w-[300px]">
                                 <img src={attachmentUrl} alt="Ảnh"
-                                  className="rounded-xl max-w-full max-h-[400px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                  className="w-full max-h-[400px] object-cover cursor-pointer rounded-2xl hover:opacity-95 transition-opacity"
                                   loading="lazy"
                                   onClick={() => setLightboxUrl(attachmentUrl)}
                                   onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                                 />
-                                <div className="hidden items-center justify-center bg-gray-100 rounded-xl h-32 text-gray-400 text-xs">Không thể tải ảnh</div>
+                                <div className="hidden items-center justify-center bg-gray-100 rounded-2xl h-32 text-gray-400 text-xs">Không thể tải ảnh</div>
                               </div>
-                            ) : (msg.content)}
-                            <div className={`text-[10px] mt-1 flex items-center gap-1 ${isMine ? 'text-primary-200 justify-end' : 'text-gray-400 justify-start'}`}>
-                              {msg.created_at ? formatTime(msg.created_at) : ''}
-                              {isMine && !msg.is_deleted && statusIcon(msg.status)}
-                            </div>
+                            ) : isFile ? (
+                              // ── File attachment: clean card, no bubble ──
+                              <div className="max-w-[280px] bg-white rounded-2xl border border-gray-200 p-3.5 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
+                                    <FiFile size={20} className="text-primary-500" />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-gray-800 truncate">{msg.content || 'File đính kèm'}</p>
+                                    <p className="text-xs text-gray-400 mt-0.5">
+                                      {msg.metadata?.attachmentName || 'File'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              msg.content
+                            )}
+                            {/* Time + status */}
+                            {!noBubble ? (
+                              <div className={`text-[10px] mt-1.5 flex items-center gap-1.5 ${isMine ? 'text-primary-200 justify-end' : 'text-gray-400 justify-start'}`}>
+                                <span>{msg.created_at ? formatTime(msg.created_at) : ''}</span>
+                                <StatusIcon status={msg.status} isMine={isMine} />
+                              </div>
+                            ) : (
+                              <div className={`flex items-center gap-1.5 mt-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                                <span className="text-[10px] text-gray-400">{msg.created_at ? formatTime(msg.created_at) : ''}</span>
+                                <StatusIcon status={msg.status} isMine={isMine} />
+                              </div>
+                            )}
                             {isFailed && (
                               <button onClick={() => retryMessage(msg)}
-                                className="absolute -bottom-5 right-0 text-[10px] text-red-400 hover:text-red-500 font-medium">Thử lại</button>
+                                className="block mt-1 text-[10px] text-red-400 hover:text-red-500 font-medium">Thử lại</button>
                             )}
-                            {!msg.is_deleted && !isTemp && !isImage && (
+                            {/* Actions on hover (text only) */}
+                            {!msg.is_deleted && !isTemp && !isImage && !isFile && (
                               <div className={`absolute -top-8 hidden group-hover:flex gap-0.5 bg-white rounded-lg shadow-lg border p-1 z-20 ${isMine ? 'right-0' : 'left-0'}`}>
                                 <button onClick={() => setReplyTo(msg)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Trả lời"><FiCornerUpLeft size={14} /></button>
                                 <button onClick={() => { setShowEmoji(showEmoji === msg.id ? null : msg.id); }} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500" title="Cảm xúc"><FiSmile size={14} /></button>
                                 {isMine && <button onClick={() => deleteMessage(msg.id)} className="p-1.5 hover:bg-red-50 rounded-lg text-red-400" title="Thu hồi"><FiTrash2 size={14} /></button>}
                               </div>
                             )}
+                            {/* Emoji picker */}
                             {showEmoji === msg.id && (
-                              <div className={`absolute -bottom-12 z-10 bg-white rounded-xl shadow-lg border p-2 flex gap-1 ${isMine ? 'right-0' : 'left-0'}`}>
+                              <div className={`absolute -bottom-14 z-10 bg-white rounded-xl shadow-lg border p-2 flex gap-1 ${isMine ? 'right-0' : 'left-0'}`}>
                                 {EMOJIS.map(e => (
                                   <button key={e} onClick={() => toggleReaction(msg.id, e)}
                                     className={`w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-lg text-lg transition-transform hover:scale-125 ${userReaction?.emoji === e ? 'bg-primary-50 ring-1 ring-primary-300' : ''}`}>{e}</button>
@@ -665,11 +708,14 @@ export default function ChatPage() {
                               </div>
                             )}
                           </div>
+                          {/* Reactions display */}
                           {Object.keys(reactionCounts).length > 0 && (
-                            <div className={`flex gap-1 -mt-1.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`flex gap-1 -mt-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                               <div className="bg-white rounded-full shadow-sm border px-1.5 py-0.5 flex gap-1 text-xs">
                                 {Object.entries(reactionCounts).map(([emoji, count]) => (
-                                  <span key={emoji} className="cursor-pointer hover:scale-110 transition-transform">{emoji}{count > 1 ? <span className="text-gray-400 text-[10px]">{count}</span> : ''}</span>
+                                  <span key={emoji} className="cursor-pointer hover:scale-110 transition-transform">
+                                    {emoji}{count > 1 ? <span className="text-gray-400 text-[10px] ml-0.5">{count}</span> : ''}
+                                  </span>
                                 ))}
                               </div>
                             </div>
@@ -693,6 +739,7 @@ export default function ChatPage() {
               </button>
             )}
 
+            {/* Image preview */}
             {previewUrl && (
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
                 <div className="relative inline-block max-w-[300px]">
@@ -709,6 +756,22 @@ export default function ChatPage() {
               </div>
             )}
 
+            {/* File preview */}
+            {selectedDoc && (
+              <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
+                <div className="inline-flex items-center gap-3 bg-white rounded-2xl border border-gray-200 p-3 shadow-sm max-w-[350px]">
+                  <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
+                    <FiFile size={20} className="text-primary-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{docName}</p>
+                    <p className="text-xs text-gray-400">Sẵn sàng gửi</p>
+                  </div>
+                  <button onClick={cancelDoc} className="p-1 hover:bg-gray-100 rounded-lg flex-shrink-0"><FiX size={16} className="text-gray-400" /></button>
+                </div>
+              </div>
+            )}
+
             {replyTo && (
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
                 <FiCornerUpLeft size={14} className="text-primary-500" />
@@ -720,18 +783,39 @@ export default function ChatPage() {
               </div>
             )}
 
-            <form onSubmit={sendMessage} className="p-4 bg-white border-t border-gray-200">
-              <div className="flex items-end gap-3">
+            {/* ── Message Composer: evenly spaced tools ── */}
+            <form onSubmit={sendMessage} className="p-3 bg-white border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                {/* File attachment button */}
                 <button type="button" onClick={() => fileInputRef.current?.click()}
-                  className="text-gray-400 hover:text-primary-500 p-2 hover:bg-gray-100 rounded-xl transition-colors" title="Đính kèm ảnh"><FiImage size={20} /></button>
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
-                <div className="flex-1 relative">
+                  className="text-gray-400 hover:text-primary-500 p-2.5 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0" title="Đính kèm file">
+                  <FiPaperclip size={20} />
+                </button>
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+
+                {/* Image button */}
+                <button type="button" onClick={() => imageInputRef.current?.click()}
+                  className="text-gray-400 hover:text-primary-500 p-2.5 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0" title="Đính kèm ảnh">
+                  <FiImage size={20} />
+                </button>
+                <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+
+                {/* Emoji button */}
+                <button type="button" onClick={() => setShowEmoji(showEmoji ? null : 'new')}
+                  className="text-gray-400 hover:text-primary-500 p-2.5 hover:bg-gray-100 rounded-xl transition-colors flex-shrink-0" title="Cảm xúc">
+                  <FiSmile size={20} />
+                </button>
+
+                {/* Text input */}
+                <div className="flex-1">
                   <textarea value={text} onChange={e => handleTyping(e.target.value)} onKeyDown={handleKeyDown} rows={1}
                     className="w-full px-4 py-2.5 bg-gray-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 resize-none max-h-32"
                     placeholder="Nhập tin nhắn..." style={{ minHeight: '42px' }} />
                 </div>
+
+                {/* Send button */}
                 <button type="submit" disabled={!text.trim()}
-                  className="w-10 h-10 rounded-xl bg-primary-500 text-white flex items-center justify-center disabled:opacity-40 hover:bg-primary-600 transition-colors flex-shrink-0">
+                  className="w-[42px] h-[42px] rounded-xl bg-primary-500 text-white flex items-center justify-center disabled:opacity-40 hover:bg-primary-600 transition-colors flex-shrink-0">
                   <FiSend size={18} />
                 </button>
               </div>
