@@ -563,42 +563,54 @@ export default function FeedScreen() {
                 }
                 renderItem={({ item }) => {
                   // Build 3-level tree from flat comments
-                  // Level 1 = no parent_id, Level 2 = replies to Level 1, Level 3 = replies to Level 2
-                  const l1 = item.parent_id == null;
                   const flat = comments || [];
                   const l1Ids = new Set(flat.filter(c => c.parent_id == null).map(c => c.id));
                   const l2Ids = new Set(flat.filter(c => c.parent_id && l1Ids.has(c.parent_id)).map(c => c.id));
-                  const level = l1 ? 1 : (l2Ids.has(item.parent_id) ? 2 : (l1Ids.has(item.parent_id) ? 2 : 3));
-                  const indent = level === 1 ? 0 : level === 2 ? 36 : 60;
-                  const avatarSize = level === 1 ? 32 : level === 2 ? 26 : 22;
-                  const fontSize = level === 1 ? 14 : 13;
+                  const level = item.parent_id == null ? 1 : (l2Ids.has(item.parent_id) ? 2 : (l1Ids.has(item.parent_id) ? 2 : 3));
+                  const indent = level === 1 ? 0 : level === 2 ? 32 : 52;
+                  const avatarSize = level === 1 ? 32 : level === 2 ? 28 : 24;
+                  const fontSize = level === 1 ? 15 : 14;
                   const bubblePad = level === 1 ? 10 : 8;
-                  const marginBottom = level === 1 ? 14 : 8;
-                  const isReply = level > 1;
+                  const marginBottom = level === 1 ? 12 : 6;
+
+                  // Find parent name for reply context
+                  let parentName = null;
+                  if (level > 1 && item.parent_id) {
+                    const parent = flat.find(c => c.id === item.parent_id);
+                    parentName = parent?.user_name;
+                  }
+
                   return (
-                    <View style={[styles.commentItem, { marginLeft: indent, marginBottom }]}>
-                      <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }]}>
-                        <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(item.user_name || "?")[0].toUpperCase()}</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <View style={[styles.commentBubble, { padding: bubblePad }]}>
-                          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                            <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{item.user_name || "Người dùng"}</Text>
-                            <Text style={styles.commentTime}>{formatTime(item.created_at)}</Text>
-                          </View>
-                          <Text style={[styles.commentContent, { fontSize }]}>{item.content}</Text>
+                    <View style={styles.commentItem}>
+                      <View style={[styles.commentRow, { marginLeft: indent }]}>
+                        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }]}>
+                          <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(item.user_name || "?")[0].toUpperCase()}</Text>
                         </View>
-                        {/* Actions */}
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 3, paddingHorizontal: 4 }}>
-                          <Text style={styles.commentActionText}>❤️ 0</Text>
-                          <TouchableOpacity onPress={() => { setReplyTo({ id: item.id, name: item.user_name || "Người dùng" }); commentInputRef.current?.focus(); }}>
-                            <Text style={styles.commentActionText}>Trả lời</Text>
-                          </TouchableOpacity>
-                          {item.user_name === "Bạn" && !item.is_temp && (
-                            <TouchableOpacity onPress={() => deleteComment(item.id)}>
-                              <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
+                        <View style={{ flex: 1 }}>
+                          <View style={[styles.commentBubble, { padding: bubblePad }]}>
+                            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+                              <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{item.user_name || "Người dùng"}</Text>
+                              {parentName && <Text style={styles.commentReplyTo}> → {parentName}</Text>}
+                              <Text style={styles.commentTime}>{formatTime(item.created_at)}</Text>
+                            </View>
+                            <Text style={[styles.commentContent, { fontSize }]}>{item.content}</Text>
+                          </View>
+                          {/* Actions */}
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2, paddingHorizontal: 4 }}>
+                            <Text style={styles.commentActionText}>❤️ 0</Text>
+                            <Text style={styles.commentActionSep}>·</Text>
+                            <TouchableOpacity onPress={() => { setReplyTo({ id: item.id, name: item.user_name || "Người dùng" }); commentInputRef.current?.focus(); }}>
+                              <Text style={styles.commentActionText}>Trả lời</Text>
                             </TouchableOpacity>
-                          )}
+                            {item.user_name === "Bạn" && !item.is_temp && (
+                              <>
+                                <Text style={styles.commentActionSep}>·</Text>
+                                <TouchableOpacity onPress={() => deleteComment(item.id)}>
+                                  <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
+                                </TouchableOpacity>
+                              </>
+                            )}
+                          </View>
                         </View>
                       </View>
                     </View>
@@ -728,14 +740,17 @@ const styles = StyleSheet.create({
   commentHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E5E5", alignSelf: "center", marginTop: 10, marginBottom: 8 },
   commentHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   commentHeaderTitle: { fontSize: 17, fontWeight: "700", color: "#000" },
-  commentItem: { flexDirection: "row", marginBottom: 12, gap: 8 },
+  commentItem: { marginBottom: 6 },
+  commentRow: { flexDirection: "row", gap: 8 },
   commentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
   commentAvatarText: { fontSize: 12, fontWeight: "700", color: colors.primary },
-  commentBubble: { backgroundColor: "#F0F2F5", borderRadius: 16, padding: 10, flex: 1 },
+  commentBubble: { backgroundColor: "#F0F2F5", borderRadius: 16, padding: 10 },
   commentName: { fontSize: 13, fontWeight: "600", color: "#000" },
+  commentReplyTo: { fontSize: 11, color: "#65676B", marginLeft: 4 },
   commentTime: { fontSize: 10, color: "#8A8D91", marginLeft: 8 },
   commentContent: { fontSize: 14, color: "#333", lineHeight: 18 },
   commentActionText: { fontSize: 12, color: "#65676B", fontWeight: "500" },
+  commentActionSep: { fontSize: 12, color: "#D1D5DB" },
   commentInputBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", backgroundColor: "#fff" },
   commentInput: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 80, fontSize: 14, color: "#000" },
   commentSend: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginLeft: 8 },
