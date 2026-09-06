@@ -11,7 +11,18 @@ export function setSocketIO(socketIO) {
   io = socketIO;
 }
 
-// Helper: enrich a post with user data and is_liked/is_saved flags
+// Helper: calculate distance between two coordinates (Haversine formula)
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c * 10) / 10; // km, 1 decimal
+}
 async function enrichPost(post, userId) {
   if (!post) return null;
   const isLiked = await queryOne('SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?', [post.id, userId]);
@@ -33,17 +44,24 @@ async function enrichPost(post, userId) {
 // ─── Create Post ────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { content, imageUrl, lat, lng } = req.body;
-    if (!content && !imageUrl) return res.status(400).json({ error: 'Content or image required' });
+    const { content, imageUrl, media, lat, lng, locationName } = req.body;
+    if (!content && !imageUrl && (!media || media.length === 0)) return res.status(400).json({ error: 'Content or image required' });
 
     const postId = crypto.randomUUID();
-    const postType = imageUrl ? 'image' : 'text';
+    const postType = media || imageUrl ? 'image' : 'text';
+    const mediaJson = media ? JSON.stringify(media) : null;
+    const firstImage = media?.[0]?.url || imageUrl || null;
     await query(
-      'INSERT INTO posts (id, user_id, content, image_url, type, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [postId, req.user.id, content || '', imageUrl || null, postType, lat || null, lng || null]
+      'INSERT INTO posts (id, user_id, content, image_url, media, type, lat, lng, location_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [postId, req.user.id, content || '', firstImage, mediaJson, postType, lat || null, lng || null, locationName || null]
     );
 
-    const post = await enrichPost({ id: postId, user_id: req.user.id, content: content || '', image_url: imageUrl || null, type: postType, lat: lat || null, lng: lng || null, like_count: 0, comment_count: 0, share_count: 0, save_count: 0, created_at: new Date() }, req.user.id);
+    const post = await enrichPost({
+      id: postId, user_id: req.user.id, content: content || '',
+      image_url: firstImage, media: mediaJson, type: postType,
+      lat: lat || null, lng: lng || null, location_name: locationName || null,
+      like_count: 0, comment_count: 0, share_count: 0, save_count: 0, created_at: new Date()
+    }, req.user.id);
 
     if (io) {
       io.emit('post:new', post);
@@ -108,6 +126,7 @@ router.get('/', authenticate, async (req, res) => {
       ...p,
       is_liked: p.is_liked > 0,
       is_saved: p.is_saved > 0,
+      distance: userLoc.length ? calculateDistance(userLoc[0].lat, userLoc[0].lng, p.lat, p.lng) : null,
     }));
 
     res.json({ posts: enriched, hasMore: posts.length >= limit });
