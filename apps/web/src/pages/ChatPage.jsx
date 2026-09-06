@@ -525,6 +525,11 @@ export default function ChatPage() {
     }
   };
 
+  const filteredConv = conversations.filter(c =>
+    c.display_name?.toLowerCase().includes(search.toLowerCase())
+  );
+  const otherUser = convDetail?.members?.find(m => m.id !== user?.id);
+
   // ─── Block/Unblock ──────────────────────────────
   const checkBlockStatus = useCallback(async () => {
     if (!otherUser?.id) return;
@@ -558,11 +563,6 @@ export default function ChatPage() {
       navigate('/chat');
     } catch {}
   };
-
-  const filteredConv = conversations.filter(c =>
-    c.display_name?.toLowerCase().includes(search.toLowerCase())
-  );
-  const otherUser = convDetail?.members?.find(m => m.id !== user?.id);
 
   const groupedMessages = messages.reduce((acc, msg) => {
     const date = formatDate(msg.created_at);
