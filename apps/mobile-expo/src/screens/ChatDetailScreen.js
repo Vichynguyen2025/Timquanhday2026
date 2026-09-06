@@ -28,6 +28,8 @@ export default function ChatDetailScreen({ route, navigation }) {
   const [replyTo, setReplyTo] = useState(null);
   const [receiverId, setReceiverId] = useState(null);
   const [otherUser, setOtherUser] = useState(null);
+  const [blockStatus, setBlockStatus] = useState(null); // null, 'blocked_by_me', 'blocked_by_them'
+  const [blockLoading, setBlockLoading] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -41,6 +43,7 @@ export default function ChatDetailScreen({ route, navigation }) {
 
   // Realtime presence: check if other user is online
   const isOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : (otherUser?.is_online === 1);
+  const isBlocked = blockStatus === 'blocked_by_me' || blockStatus === 'blocked_by_them';
 
   // Resolve image URL: handle relative paths from old messages
   function resolveUrl(url) {
@@ -55,7 +58,19 @@ export default function ChatDetailScreen({ route, navigation }) {
     api.get("/conversations/" + conversationId).then((res) => {
       const members = res.data?.members || [];
       const other = members.find((m) => m.id !== user?.id);
-      if (other) { setReceiverId(other.id); setOtherUser(other); }
+      if (other) {
+        setReceiverId(other.id);
+        setOtherUser(other);
+        // Check block status after we have receiverId
+        api.get("/users/" + other.id + "/block-status").then((res2) => {
+          const data = res2.data;
+          if (data.isBlocked) {
+            setBlockStatus(data.blockedBy === 'me' ? 'blocked_by_me' : 'blocked_by_them');
+          } else {
+            setBlockStatus(null);
+          }
+        }).catch(() => {});
+      }
     }).catch(() => {});
 
     // Keyboard listeners
@@ -339,7 +354,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   }
 
   const initial = (otherUser?.name || name || "?")[0].toUpperCase();
-  const statusText = typing ? "Đang nhập..." : isOnline ? "Đang hoạt động" : "Không hoạt động";
+  const statusText = typing ? "Đang nhập..." : isBlocked ? "Đã chặn" : isOnline ? "Đang hoạt động" : "Không hoạt động";
 
   const renderMessage = ({ item }) => {
     const isMine = item.sender_id === user?.id;
@@ -458,9 +473,15 @@ export default function ChatDetailScreen({ route, navigation }) {
                 }},
               ]);
             }},
-            { text: "Chặn người dùng", style: "destructive", onPress: async () => {
-              try { await api.post("/users/" + receiverId + "/block");
-                Alert.alert("Đã chặn", "Người dùng đã bị chặn.");
+            { text: blockStatus === 'blocked_by_me' ? "Bỏ chặn" : "Chặn người dùng", style: "destructive", onPress: async () => {
+              try {
+                if (blockStatus === 'blocked_by_me') {
+                  await api.post("/users/" + receiverId + "/unblock");
+                  setBlockStatus(null);
+                } else {
+                  await api.post("/users/" + receiverId + "/block");
+                  setBlockStatus('blocked_by_me');
+                }
               } catch (e) {}
             }},
             { text: "Huỷ", style: "cancel" },
@@ -549,41 +570,80 @@ export default function ChatDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Input bar — safe area when closed, no gap when open */}
-      <View style={[styles.inputBar, keyboardVisible ? {} : { paddingBottom: insets.bottom }]}>
-        <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)} style={styles.inputBtn}>
-          <Ionicons name={showEmoji ? "keypad" : "happy-outline"} size={24} color={colors.primary} />
-        </TouchableOpacity>
-        <TextInput
-          ref={inputRef}
-          style={styles.input}
-          placeholder="Tin nhắn..."
-          placeholderTextColor="#8A8D91"
-          value={text}
-          onChangeText={handleTyping}
-          onFocus={() => setShowEmoji(false)}
-          multiline
-        />
-        <TouchableOpacity onPress={pickImage} style={styles.inputBtn}>
-          <Ionicons name="image-outline" size={22} color={colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={pickFile} style={styles.inputBtn}>
-          <Ionicons name="attach-outline" size={22} color={colors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={sendMessage} disabled={!text.trim()} style={[styles.sendBtn, !text.trim() && { opacity: 0.4 }]}>
-          <Ionicons name="send" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Emoji bar */}
-      {showEmoji && (
-        <View style={styles.emojiBar}>
-          {EMOJIS.map((e) => (
-            <TouchableOpacity key={e} onPress={() => sendEmoji(e)}>
-              <Text style={{ fontSize: 28, paddingHorizontal: 5 }}>{e}</Text>
+      {/* Block banner — replaces input bar when blocked */}
+      {isBlocked ? (
+        <View style={[styles.blockBanner, keyboardVisible ? {} : { paddingBottom: insets.bottom }]}>
+          <View style={styles.blockIcon}>
+            <Ionicons name="ban-outline" size={24} color="#EF4444" />
+          </View>
+          <Text style={styles.blockTitle}>
+            {blockStatus === 'blocked_by_me' ? 'Bạn đã chặn người này' : 'Bạn không thể nhắn tin cho tài khoản này'}
+          </Text>
+          <Text style={styles.blockDesc}>
+            {blockStatus === 'blocked_by_me'
+              ? 'Bạn không thể gửi tin nhắn.'
+              : 'Người dùng này đã chặn bạn.'}
+          </Text>
+          {blockStatus === 'blocked_by_me' && (
+            <TouchableOpacity
+              style={styles.unblockBtn}
+              disabled={blockLoading}
+              onPress={async () => {
+                setBlockLoading(true);
+                try {
+                  await api.post("/users/" + receiverId + "/unblock");
+                  setBlockStatus(null);
+                } catch (e) {}
+                setBlockLoading(false);
+              }}
+            >
+              {blockLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.unblockText}>Bỏ chặn</Text>
+              )}
             </TouchableOpacity>
-          ))}
+          )}
         </View>
+      ) : (
+        <>
+          {/* Input bar — safe area when closed, no gap when open */}
+          <View style={[styles.inputBar, keyboardVisible ? {} : { paddingBottom: insets.bottom }]}>
+            <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)} style={styles.inputBtn}>
+              <Ionicons name={showEmoji ? "keypad" : "happy-outline"} size={24} color={colors.primary} />
+            </TouchableOpacity>
+            <TextInput
+              ref={inputRef}
+              style={styles.input}
+              placeholder="Tin nhắn..."
+              placeholderTextColor="#8A8D91"
+              value={text}
+              onChangeText={handleTyping}
+              onFocus={() => setShowEmoji(false)}
+              multiline
+            />
+            <TouchableOpacity onPress={pickImage} style={styles.inputBtn}>
+              <Ionicons name="image-outline" size={22} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={pickFile} style={styles.inputBtn}>
+              <Ionicons name="attach-outline" size={22} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={sendMessage} disabled={!text.trim()} style={[styles.sendBtn, !text.trim() && { opacity: 0.4 }]}>
+              <Ionicons name="send" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Emoji bar */}
+          {showEmoji && (
+            <View style={styles.emojiBar}>
+              {EMOJIS.map((e) => (
+                <TouchableOpacity key={e} onPress={() => sendEmoji(e)}>
+                  <Text style={{ fontSize: 28, paddingHorizontal: 5 }}>{e}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </>
       )}
 
       {/* User Info Modal with realtime presence */}
@@ -675,6 +735,13 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 80, marginHorizontal: 4, fontSize: 15, color: "#000" },
   sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginLeft: 2 },
   emojiBar: { flexDirection: "row", backgroundColor: "#fff", padding: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", flexWrap: "wrap", justifyContent: "center" },
+  // Block banner
+  blockBanner: { alignItems: "center", paddingHorizontal: 24, paddingVertical: 20, backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
+  blockIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#FEF2F2", alignItems: "center", justifyContent: "center", marginBottom: 8 },
+  blockTitle: { fontSize: 16, fontWeight: "600", color: "#111827", textAlign: "center", marginBottom: 4 },
+  blockDesc: { fontSize: 13, color: "#6B7280", textAlign: "center", marginBottom: 12 },
+  unblockBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, backgroundColor: "#EF4444", minWidth: 120, alignItems: "center" },
+  unblockText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   // Modal
   modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
   modalSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, alignItems: "center" },

@@ -14,6 +14,7 @@ export default function ChatListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { onlineUsers } = useSocket();
   const [conversations, setConversations] = useState([]);
+  const [blockedConversations, setBlockedConversations] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
@@ -38,7 +39,20 @@ export default function ChatListScreen({ navigation }) {
   async function fetchConversations() {
     try {
       const res = await api.get("/conversations");
-      setConversations(res.data);
+      const convs = res.data || [];
+      setConversations(convs);
+      // Check block status for each conversation
+      const blocked = new Set();
+      for (const c of convs) {
+        const otherId = c.participants?.[0];
+        if (otherId) {
+          try {
+            const statusRes = await api.get("/users/" + otherId + "/block-status");
+            if (statusRes.data?.isBlocked) blocked.add(c.id);
+          } catch {}
+        }
+      }
+      setBlockedConversations(blocked);
     } catch (e) {}
     setLoading(false);
   }
@@ -139,6 +153,7 @@ export default function ChatListScreen({ navigation }) {
                   const isOnline = (otherId && onlineUsers.has(otherId)) || item.is_online;
                   return isOnline && <View style={styles.onlineDot} />;
                 })()}
+                {blockedConversations.has(item.id) && <View style={styles.blockedBadge}><Ionicons name="ban-outline" size={10} color="#EF4444" /></View>}
               </View>
               <View style={styles.convInfo}>
                 <View style={styles.convTop}>
@@ -203,6 +218,12 @@ const styles = StyleSheet.create({
   onlineDot: {
     width: 14, height: 14, borderRadius: 7, backgroundColor: colors.online,
     borderWidth: 2.5, borderColor: "#fff", position: "absolute", bottom: 0, right: 0,
+  },
+  blockedBadge: {
+    position: "absolute", top: -2, right: -2,
+    width: 18, height: 18, borderRadius: 9, backgroundColor: "#FEF2F2",
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "#fff",
   },
   convInfo: { flex: 1 },
   convTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
