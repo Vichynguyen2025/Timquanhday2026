@@ -463,22 +463,18 @@ export default function FeedScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Khám phá</Text>
         <View style={{ flexDirection: "row", gap: 4 }}>
-          <TouchableOpacity onPress={() => setShowRadii(!showRadii)} style={styles.headerBtn}>
-            <Ionicons name="options-outline" size={22} color="#000" />
-          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Radius chips */}
-      {showRadii && (
-        <View style={styles.radiusRow}>
-          {RADII.map((r) => (
-            <TouchableOpacity key={r} style={[styles.chip, radius === r && styles.chipActive]} onPress={() => { setRadius(r); setShowRadii(false); cursorRef.current = null; }}>
-              <Text style={[styles.chipText, radius === r && styles.chipTextActive]}>{r >= 1000 ? r / 1000 + "km" : r + "m"}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+      {/* Distance chips — always visible */}
+      <View style={styles.radiusRow}>
+        <Text style={styles.radiusLabel}>📍</Text>
+        {RADII.map((r) => (
+          <TouchableOpacity key={r} style={[styles.chip, radius === r && styles.chipActive]} onPress={() => { setRadius(r); cursorRef.current = null; }}>
+            <Text style={[styles.chipText, radius === r && styles.chipTextActive]}>{r >= 1000 ? r / 1000 + "km" : r + "m"}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {/* Feed */}
       {loading && posts.length === 0 ? (
@@ -560,7 +556,7 @@ export default function FeedScreen() {
                 }}
               />
             )}
-            <View style={styles.commentInputBar}>
+            <View style={[styles.commentInputBar, { paddingBottom: insets.bottom + 8 }]}>
               <TextInput
                 ref={commentInputRef}
                 style={styles.commentInput}
@@ -635,11 +631,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#fff" },
   title: { fontSize: 24, fontWeight: "700", color: "#000" },
   headerBtn: { padding: 6 },
-  radiusRow: { flexDirection: "row", paddingHorizontal: 12, paddingBottom: 10, backgroundColor: "#fff" },
-  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginRight: 8, backgroundColor: "#F0F2F5" },
-  chipActive: { backgroundColor: colors.primary },
-  chipText: { fontSize: 13, color: "#65676B" },
-  chipTextActive: { color: "#fff" },
+  radiusRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
+    radiusLabel: { fontSize: 14, marginRight: 6 },
+    chip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16, marginRight: 6, backgroundColor: "#F0F2F5" },
+    chipActive: { backgroundColor: colors.primary },
+    chipText: { fontSize: 12, color: "#65676B", fontWeight: "500" },
+    chipTextActive: { color: "#fff" },
   empty: { alignItems: "center", marginTop: 60 },
   emptyText: { fontSize: 15, color: "#65676B", marginTop: 12 },
   retryBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
@@ -671,7 +668,7 @@ const styles = StyleSheet.create({
   galleryClose: { position: "absolute", top: 60, right: 20, zIndex: 10, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 20, padding: 8 },
   galleryCounter: { position: "absolute", top: 64, left: 20, zIndex: 10, color: "#fff", fontSize: 16, fontWeight: "600" },
   // Comment
-  commentSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "80%", minHeight: "50%" },
+  commentSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1, maxHeight: "80%" },
   commentHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E5E5", alignSelf: "center", marginTop: 10, marginBottom: 8 },
   commentHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   commentHeaderTitle: { fontSize: 17, fontWeight: "700", color: "#000" },
