@@ -225,8 +225,14 @@ router.post('/', authenticate, async (req, res) => {
     // Insert media
     if (media && media.length > 0) {
       for (const m of media) {
+        // Convert ISO timestamp to MySQL DATETIME format
+        let capturedAt = null;
+        if (m.capturedAt) {
+          const d = new Date(m.capturedAt);
+          capturedAt = d.toISOString().replace('T', ' ').replace('Z', '').split('.')[0];
+        }
         await query('INSERT INTO sos_media (sos_id, url, lat, lng, location_name, captured_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [id, m.url, m.lat || null, m.lng || null, m.locationName || null, m.capturedAt || new Date()]);
+          [id, m.url, m.lat || null, m.lng || null, m.locationName || null, capturedAt]);
       }
     }
 
