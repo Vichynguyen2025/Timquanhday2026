@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import * as DocumentPicker from "expo-document-picker";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
@@ -49,10 +50,19 @@ function MediaGrid({ images, onImagePress }) {
   const W = SCREEN_WIDTH - 24; // 12px padding each side
 
   if (count === 1) {
+    const imgUrl = images[0].url || images[0];
+    console.log("[FEED_DEBUG] MediaGrid 1-image rendering:", imgUrl);
     return (
       <View style={{ paddingHorizontal: 12 }}>
         <TouchableOpacity activeOpacity={0.95} onPress={() => onImagePress(0)}>
-          <Image source={{ uri: images[0].url || images[0] }} style={{ width: "100%", height: 380, resizeMode: "cover" }} />
+          <Image
+            source={{ uri: imgUrl }}
+            style={{ width: "100%", height: 380, resizeMode: "cover" }}
+            onLoadStart={() => console.log("[IMAGE] LOAD START", imgUrl)}
+            onLoad={(e) => console.log("[IMAGE] LOAD SUCCESS", {uri: e.nativeEvent?.source?.uri, w: e.nativeEvent?.source?.width, h: e.nativeEvent?.source?.height})}
+            onError={(e) => console.log("[IMAGE] LOAD ERROR", imgUrl, e.nativeEvent?.error)}
+            onLoadEnd={() => console.log("[IMAGE] LOAD END", imgUrl)}
+          />
         </TouchableOpacity>
       </View>
     );
@@ -209,8 +219,10 @@ export default function FeedScreen() {
     if (!socket) return;
     const onPostNew = (post) => {
       if (!post?.id) return;
+      console.log("[FEED_DEBUG] post:new received, id:", (post.id || "").slice(0,12), "media:", JSON.stringify(post.media));
       setPosts((prev) => {
         if (prev.find((p) => p.id === post.id || p.client_temp_id === post.client_temp_id)) return prev;
+        console.log("[FEED_DEBUG] post:new adding to feed, media:", JSON.stringify(post.media), "img:", post.image_url);
         return [post, ...prev];
       });
     };
@@ -293,10 +305,19 @@ export default function FeedScreen() {
     if (post.media) {
       try {
         const arr = typeof post.media === "string" ? JSON.parse(post.media) : post.media;
-        if (Array.isArray(arr)) return arr.filter(i => i?.url);
-      } catch {}
+        if (Array.isArray(arr)) {
+          const filtered = arr.filter(i => i?.url);
+          console.log("[FEED_DEBUG] getMediaArray post", (post.id || "?").slice(0,12), "items:", arr.length, "filtered:", filtered.length, "first URL:", filtered[0]?.url);
+          return filtered;
+        }
+      } catch (e) {
+        console.warn("[FEED_DEBUG] getMediaArray parse error:", post.media, e);
+      }
     }
-    if (post.image_url) return [{ url: post.image_url }];
+    if (post.image_url) {
+      console.log("[FEED_DEBUG] getMediaArray fallback image_url:", post.image_url);
+      return [{ url: post.image_url }];
+    }
     return [];
   }
 
@@ -312,24 +333,37 @@ export default function FeedScreen() {
 
   async function submitPost() {
     if (!postContent.trim() && postImages.length === 0) return;
-    setPosting(true); setUploadProgress("Đang tải ảnh...");
+    setPosting(true); setUploadProgress("Đang xử lý ảnh...");
     try {
       let media = [];
       for (const img of postImages) {
+        console.log("[FEED_DEBUG] Selected URI:", img.uri);
+        // Convert HEIC/HEIF to JPEG + resize + fix orientation
+        const manipResult = await ImageManipulator.manipulateAsync(
+          img.uri,
+          [{ resize: { width: 1920 } }],
+          { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
+        );
+        console.log("[FEED_DEBUG] Manipulated URI:", manipResult.uri, "size:", manipResult.width + "x" + manipResult.height);
         const formData = new FormData();
-        formData.append("image", { uri: img.uri, type: "image/jpeg", name: "post.jpg" });
+        formData.append("image", { uri: manipResult.uri, type: "image/jpeg", name: "photo.jpg" });
         const token = await AsyncStorage.getItem("accessToken");
         const uploadRes = await fetch("https://timquanhday.de/api/upload/image", {
           method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
         });
         const uploadData = await uploadRes.json();
+        console.log("[FEED_DEBUG] Upload response:", JSON.stringify(uploadData));
+        console.log("[FEED_DEBUG] Uploaded URL:", uploadData.url);
         media.push({ url: uploadData.url });
       }
       setUploadProgress("Đang đăng...");
+      console.log("[FEED_DEBUG] Sending to API, media:", JSON.stringify(media));
       const res = await api.post("/posts", { content: postContent.trim(), media: media.length > 0 ? media : undefined });
+      console.log("[FEED_DEBUG] API response media:", JSON.stringify(res.data?.media));
+      console.log("[FEED_DEBUG] API response image_url:", res.data?.image_url);
       setPosts(prev => [res.data, ...prev]);
       setShowCreatePost(false); setPostContent(""); setPostImages([]);
-    } catch (e) { Alert.alert("Lỗi", "Không thể đăng bài viết"); }
+    } catch (e) { Alert.alert("Lỗi", "Không thể đăng bài viết"); console.error("[FEED_DEBUG] Create post error:", e); }
     setPosting(false); setUploadProgress(null);
   }
 
@@ -418,6 +452,10 @@ export default function FeedScreen() {
       </View>
     </TouchableOpacity>
   );
+
+  // Test image to verify Image component works
+  const TEST_IMAGE_URL = "https://timquanhday.de/uploads/39ca2baa-4d6f-42eb-9f43-a05b5dc69b1e.jpg";
+  console.log("[FEED_DEBUG] Test image URL:", TEST_IMAGE_URL);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
