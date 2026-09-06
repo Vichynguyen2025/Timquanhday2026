@@ -4,6 +4,8 @@ import { query, queryOne } from '../models/db.js';
 import { authenticate, generateTokens } from '../middleware/auth.js';
 import jwt from 'jsonwebtoken';
 
+import crypto from 'crypto';
+
 const router = Router();
 
 // Register
@@ -21,11 +23,11 @@ router.post('/register', async (req, res) => {
     if (existing) return res.status(409).json({ error: 'Email or phone already registered' });
 
     const hashed = await bcrypt.hash(password, 10);
-    const result = await query(
-      'INSERT INTO users (name, email, phone, password) VALUES (?, ?, ?, ?)',
-      [name, email, phone || null, hashed]
+    const userId = crypto.randomUUID();
+    await query(
+      'INSERT INTO users (id, name, email, phone, password) VALUES (?, ?, ?, ?, ?)',
+      [userId, name, email, phone || null, hashed]
     );
-    const userId = result.insertId.toString('hex');
 
     const tokens = generateTokens(userId);
     await query('INSERT INTO user_sessions (user_id, refresh_token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 7 DAY))',
