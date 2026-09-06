@@ -31,9 +31,16 @@ function HomeTabs() {
           return <Ionicons name={name} size={size} color={color} />;
         },
         tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textTertiary,
+        tabBarInactiveTintColor: "#8A8D91",
         headerShown: false,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
+        tabBarStyle: {
+          backgroundColor: "#fff",
+          borderTopColor: "#E5E5E5",
+          borderTopWidth: 0.5,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
       })}
     >
       <Tab.Screen name="Chat" component={ChatListScreen} />
@@ -54,7 +61,11 @@ export default function AppNavigator() {
         {user ? (
           <>
             <Stack.Screen name="Home" component={HomeTabs} />
-            <Stack.Screen name="ChatDetail" component={ChatDetailScreen} options={{ headerShown: true, title: "Chat", headerBackTitle: "Quay lại" }} />
+            <Stack.Screen
+              name="ChatDetail"
+              component={ChatDetailScreen}
+              options={{ headerShown: false, animation: "slide_from_right" }}
+            />
           </>
         ) : (
           <>

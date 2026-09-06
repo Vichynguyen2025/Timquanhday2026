@@ -6,89 +6,63 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api from "../services/api";
 import { colors } from "../theme/colors";
 
-// ─── Seed data (Instagram-style) ─────────────────
+// ─── Seed posts ─────────────────────────────────
 const SEED_POSTS = [
   {
-    id: "seed-1",
-    user_name: "Nguyễn Đức Chính",
-    user_avatar: "N",
-    content: "Buổi sáng bên hồ Hoàn Kiếm thật yên bình ☀️ Trời trong xanh, gió nhẹ. Hãy tận hưởng những khoảnh khắc đẹp của cuộc sống!",
+    id: "seed-1", user_name: "Nguyễn Đức Chính", user_avatar: "N",
+    content: "Buổi sáng bên hồ Hoàn Kiếm thật yên bình ☀️ Trời trong xanh, gió nhẹ.",
     image_url: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800",
     created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    like_count: 24,
-    comment_count: 5,
-    is_liked: false,
+    like_count: 24, comment_count: 5, is_liked: false,
   },
   {
-    id: "seed-2",
-    user_name: "Minh Anh",
-    user_avatar: "M",
+    id: "seed-2", user_name: "Minh Anh", user_avatar: "M",
     content: "Cà phê sáng cùng view cực chill 🍂",
     image_url: "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?w=800",
     created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    like_count: 18,
-    comment_count: 3,
-    is_liked: true,
+    like_count: 18, comment_count: 3, is_liked: true,
   },
   {
-    id: "seed-3",
-    user_name: "Hoàng Nam",
-    user_avatar: "H",
-    content: "Khám phá một quán cà phê mới ở phố cổ. Không gian vintage, nhạc jazz nhẹ nhàng 🎷",
+    id: "seed-3", user_name: "Hoàng Nam", user_avatar: "H",
+    content: "Khám phá một quán cà phê mới ở phố cổ. Không gian vintage, nhạc jazz 🎷",
     image_url: "https://images.unsplash.com/photo-1445116572660-236099ec97a0?w=800",
     created_at: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
-    like_count: 31,
-    comment_count: 8,
-    is_liked: false,
+    like_count: 31, comment_count: 8, is_liked: false,
   },
   {
-    id: "seed-4",
-    user_name: "Quỳnh Trang",
-    user_avatar: "Q",
-    content: "Chiều hoàng hôn trên sông Hương 🌅 Một màu cam rực rỡ phủ khắp mặt nước. Thật đẹp và bình yên.",
+    id: "seed-4", user_name: "Quỳnh Trang", user_avatar: "Q",
+    content: "Chiều hoàng hôn trên sông Hương 🌅",
     image_url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
     created_at: new Date(Date.now() - 1000 * 60 * 400).toISOString(),
-    like_count: 45,
-    comment_count: 12,
-    is_liked: false,
+    like_count: 45, comment_count: 12, is_liked: false,
   },
   {
-    id: "seed-5",
-    user_name: "Đức Anh",
-    user_avatar: "Đ",
-    content: "Mới sưu tầm được một cuốn sách hay. Có ai muốn đọc cùng không? 📚",
+    id: "seed-5", user_name: "Đức Anh", user_avatar: "Đ",
+    content: "Mới sưu tầm được một cuốn sách hay 📚",
     image_url: "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=800",
     created_at: new Date(Date.now() - 1000 * 60 * 600).toISOString(),
-    like_count: 12,
-    comment_count: 2,
-    is_liked: true,
+    like_count: 12, comment_count: 2, is_liked: true,
   },
   {
-    id: "seed-6",
-    user_name: "Linh Chi",
-    user_avatar: "L",
+    id: "seed-6", user_name: "Linh Chi", user_avatar: "L",
     content: "Street food tour hôm nay! Bún chả Hà Nội là nhất 🍜",
     image_url: "https://images.unsplash.com/photo-1555126634-323283e090fa?w=800",
     created_at: new Date(Date.now() - 1000 * 60 * 900).toISOString(),
-    like_count: 56,
-    comment_count: 15,
-    is_liked: false,
+    like_count: 56, comment_count: 15, is_liked: false,
   },
 ];
 
-// ─── Stories data ───────────────────────────────
 const STORIES = [
-  { id: "st-1", name: "Chính", avatar: "C", color: "#FF6B6B" },
-  { id: "st-2", name: "Anh", avatar: "A", color: "#4ECDC4" },
-  { id: "st-3", name: "Nam", avatar: "N", color: "#45B7D1" },
-  { id: "st-4", name: "Trang", avatar: "T", color: "#F7DC6F" },
-  { id: "st-5", name: "Đức", avatar: "Đ", color: "#BB8FCE" },
-  { id: "st-6", name: "Chi", avatar: "C", color: "#F1948A" },
-  { id: "st-7", name: "Minh", avatar: "M", color: "#82E0AA" },
-  { id: "st-8", name: "Huy", avatar: "H", color: "#85C1E9" },
+  { id: "st-1", name: "Chính", color: "#2563EB" },
+  { id: "st-2", name: "Anh", color: "#EC4899" },
+  { id: "st-3", name: "Nam", color: "#F59E0B" },
+  { id: "st-4", name: "Trang", color: "#10B981" },
+  { id: "st-5", name: "Đức", color: "#8B5CF6" },
+  { id: "st-6", name: "Chi", color: "#EF4444" },
+  { id: "st-7", name: "Minh", color: "#06B6D4" },
+  { id: "st-8", name: "Huy", color: "#F97316" },
 ];
 
-// ─── Radius options ──────────────────────────────
 const RADII = [100, 200, 500, 1000, 5000];
 
 function formatTime(d) {
@@ -116,20 +90,12 @@ export default function FeedScreen() {
     setLoading(true);
     try {
       const res = await api.get("/posts", { params: { radius } });
-      // Merge API posts with seed data
       const apiPosts = (res.data || []).map((p) => ({
-        ...p,
-        user_name: p.user_name || p.user?.name || "Người dùng",
-        user_avatar: (p.user_name || p.user?.name || "?")[0].toUpperCase(),
+        ...p, user_name: p.user_name || p.user?.name || "Người dùng",
         image_url: p.image_url || null,
       }));
-      // Show seed posts first, then API posts
-      const merged = [...SEED_POSTS, ...apiPosts];
-      setPosts(merged);
-    } catch (e) {
-      // If API fails, show only seed data
-      setPosts(SEED_POSTS);
-    }
+      setPosts([...SEED_POSTS, ...apiPosts]);
+    } catch (e) { setPosts(SEED_POSTS); }
     setLoading(false);
   }
 
@@ -142,12 +108,12 @@ export default function FeedScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Khám phá</Text>
-        <TouchableOpacity onPress={() => setShowRadii(!showRadii)} style={styles.radiusToggle}>
-          <Ionicons name="options-outline" size={22} color={colors.textSecondary} />
+        <TouchableOpacity onPress={() => setShowRadii(!showRadii)}>
+          <Ionicons name="options-outline" size={22} color="#000" />
         </TouchableOpacity>
       </View>
 
-      {/* Radius chips (collapsible) */}
+      {/* Radius chips */}
       {showRadii && (
         <View style={styles.radiusRow}>
           {RADII.map((r) => (
@@ -169,84 +135,64 @@ export default function FeedScreen() {
           ListHeaderComponent={
             <View style={styles.storiesRow}>
               <View style={styles.storyItem}>
-                <View style={[styles.storyCircle, { borderColor: colors.primary, borderWidth: 2.5 }]}>
-                  <Ionicons name="add" size={28} color={colors.primary} />
+                <View style={[styles.storyRing, { borderColor: colors.primary }]}>
+                  <Ionicons name="add" size={24} color={colors.primary} />
                 </View>
                 <Text style={styles.storyName}>Tin của bạn</Text>
               </View>
               {STORIES.map((s) => (
-                <TouchableOpacity key={s.id} style={styles.storyItem}>
-                  <View style={[styles.storyCircle, { borderColor: s.color, borderWidth: 2.5 }]}>
-                    <Text style={styles.storyAvatar}>{s.avatar}</Text>
+                <View key={s.id} style={styles.storyItem}>
+                  <View style={[styles.storyRing, { borderColor: s.color, borderWidth: 2.5 }]}>
+                    <Text style={styles.storyAvatar}>{s.name[0]}</Text>
                   </View>
                   <Text style={styles.storyName} numberOfLines={1}>{s.name}</Text>
-                </TouchableOpacity>
+                </View>
               ))}
             </View>
           }
-          renderItem={({ item }) => {
-            const timeAgo = formatTime(item.created_at);
-            const isImage = !!item.image_url;
-
-            return (
-              <View style={styles.postCard}>
-                {/* Post header */}
-                <View style={styles.postHeader}>
-                  <View style={styles.postAvatar}>
-                    <Text style={styles.postAvatarText}>{item.user_avatar || (item.user_name || "?")[0].toUpperCase()}</Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.postUserName}>{item.user_name || "Người dùng"}</Text>
-                    <Text style={styles.postTime}>{timeAgo}</Text>
-                  </View>
-                  <TouchableOpacity>
-                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Post image */}
-                {isImage && (
-                  <Image source={{ uri: item.image_url }} style={styles.postImage} />
-                )}
-
-                {/* Post content */}
-                {item.content ? (
-                  <Text style={styles.postContent}>{item.content}</Text>
-                ) : null}
-
-                {/* Post actions */}
-                <View style={styles.postActions}>
-                  <View style={styles.postActionsLeft}>
-                    <TouchableOpacity onPress={() => toggleLike(item.id)} style={styles.postAction}>
-                      <Ionicons
-                        name={item.is_liked ? "heart" : "heart-outline"}
-                        size={24}
-                        color={item.is_liked ? colors.error : colors.text}
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction}>
-                      <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction}>
-                      <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
-                    </TouchableOpacity>
-                  </View>
-                  <TouchableOpacity>
-                    <Ionicons name="bookmark-outline" size={22} color={colors.text} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Likes + comments */}
-                <View style={styles.postFooter}>
-                  <Text style={styles.likesText}>{item.like_count} lượt thích</Text>
-                  {item.comment_count > 0 && (
-                    <Text style={styles.commentsText}>Xem tất cả {item.comment_count} bình luận</Text>
-                  )}
-                  <Text style={styles.timeText}>{timeAgo}</Text>
-                </View>
+          renderItem={({ item }) => (
+            <View style={styles.post}>
+              {/* Header */}
+              <View style={styles.postHeader}>
+                <View style={styles.postAvatar}><Text style={styles.postAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text></View>
+                <Text style={styles.postUserName} numberOfLines={1}>{item.user_name || "Người dùng"}</Text>
+                <TouchableOpacity style={{ marginLeft: "auto" }}>
+                  <Ionicons name="ellipsis-horizontal" size={20} color="#65676B" />
+                </TouchableOpacity>
               </View>
-            );
-          }}
+              {/* Image */}
+              {item.image_url && (
+                <Image source={{ uri: item.image_url }} style={styles.postImage} />
+              )}
+              {/* Content */}
+              {item.content ? <Text style={styles.postContent}>{item.content}</Text> : null}
+              {/* Actions */}
+              <View style={styles.postActions}>
+                <View style={styles.postActionsLeft}>
+                  <TouchableOpacity onPress={() => toggleLike(item.id)} style={styles.postAction}>
+                    <Ionicons name={item.is_liked ? "heart" : "heart-outline"} size={22} color={item.is_liked ? "#EF4444" : "#000"} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.postAction}>
+                    <Ionicons name="chatbubble-outline" size={21} color="#000" />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.postAction}>
+                    <Ionicons name="paper-plane-outline" size={21} color="#000" />
+                  </TouchableOpacity>
+                </View>
+                <TouchableOpacity>
+                  <Ionicons name="bookmark-outline" size={21} color="#000" />
+                </TouchableOpacity>
+              </View>
+              {/* Footer */}
+              <View style={styles.postFooter}>
+                <Text style={styles.likes}>{item.like_count} lượt thích</Text>
+                {item.comment_count > 0 && (
+                  <Text style={styles.comments}>Xem {item.comment_count} bình luận</Text>
+                )}
+                <Text style={styles.time}>{formatTime(item.created_at)}</Text>
+              </View>
+            </View>
+          )}
         />
       )}
     </View>
@@ -254,41 +200,34 @@ export default function FeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  // Header
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#000" },
-  title: { fontSize: 24, fontWeight: "700", color: "#fff" },
-  radiusToggle: { padding: 6 },
+  container: { flex: 1, backgroundColor: "#fff" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#fff" },
+  title: { fontSize: 24, fontWeight: "700", color: "#000" },
   // Radius
-  radiusRow: { flexDirection: "row", paddingHorizontal: 12, paddingBottom: 10, backgroundColor: "#111" },
-  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginRight: 8, backgroundColor: "#222" },
+  radiusRow: { flexDirection: "row", paddingHorizontal: 12, paddingBottom: 10, backgroundColor: "#fff" },
+  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, marginRight: 8, backgroundColor: "#F0F2F5" },
   chipActive: { backgroundColor: colors.primary },
-  chipText: { fontSize: 13, color: "#aaa" },
+  chipText: { fontSize: 13, color: "#65676B" },
   chipTextActive: { color: "#fff" },
   // Stories
-  storiesRow: { flexDirection: "row", padding: 12, backgroundColor: "#000", borderBottomWidth: 0.5, borderBottomColor: "#222" },
-  storyItem: { alignItems: "center", marginRight: 16, width: 64 },
-  storyCircle: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center", backgroundColor: "#1a1a1a" },
-  storyAvatar: { fontSize: 24, fontWeight: "700", color: "#fff" },
-  storyName: { fontSize: 11, color: "#aaa", marginTop: 4, textAlign: "center" },
-  // Post card
-  postCard: { marginBottom: 0, backgroundColor: "#000", borderBottomWidth: 0.5, borderBottomColor: "#222" },
+  storiesRow: { flexDirection: "row", padding: 12, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
+  storyItem: { alignItems: "center", marginRight: 14, width: 64 },
+  storyRing: { width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center", borderWidth: 2.5 },
+  storyAvatar: { fontSize: 22, fontWeight: "700", color: "#000" },
+  storyName: { fontSize: 11, color: "#65676B", marginTop: 4, textAlign: "center" },
+  // Post
+  post: { borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5", backgroundColor: "#fff" },
   postHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10 },
-  postAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
+  postAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 10 },
   postAvatarText: { fontSize: 14, fontWeight: "700", color: colors.primary },
-  postUserName: { fontSize: 14, fontWeight: "600", color: "#fff" },
-  postTime: { fontSize: 11, color: "#888", marginTop: 1 },
-  // Image
-  postImage: { width: "100%", height: 400, resizeMode: "cover" },
-  // Content
-  postContent: { fontSize: 14, color: "#fff", lineHeight: 20, paddingHorizontal: 12, paddingVertical: 8 },
-  // Actions
-  postActions: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4 },
-  postActionsLeft: { flexDirection: "row", alignItems: "center" },
+  postUserName: { fontSize: 14, fontWeight: "600", color: "#000", flex: 1 },
+  postImage: { width: "100%", height: 380, resizeMode: "cover" },
+  postContent: { fontSize: 14, color: "#000", lineHeight: 20, paddingHorizontal: 12, paddingVertical: 8 },
+  postActions: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 8, paddingVertical: 4 },
+  postActionsLeft: { flexDirection: "row" },
   postAction: { padding: 6, marginRight: 4 },
-  // Footer
   postFooter: { paddingHorizontal: 12, paddingBottom: 12 },
-  likesText: { fontSize: 14, fontWeight: "700", color: "#fff", marginBottom: 4 },
-  commentsText: { fontSize: 14, color: "#888", marginBottom: 4 },
-  timeText: { fontSize: 11, color: "#555", marginTop: 2 },
+  likes: { fontSize: 14, fontWeight: "700", color: "#000", marginBottom: 4 },
+  comments: { fontSize: 14, color: "#65676B", marginBottom: 2 },
+  time: { fontSize: 11, color: "#8A8D91", marginTop: 2 },
 });
