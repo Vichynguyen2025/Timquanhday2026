@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Image, Modal, Alert, TextInput } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Image, Modal, Alert, TextInput, Platform, KeyboardAvoidingView, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Location from "expo-location";
+import MapView, { Marker, Circle, UrlTile, PROVIDER_DEFAULT } from "react-native-maps";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { colors } from "../theme/colors";
@@ -23,9 +24,9 @@ const CATEGORIES = [
 ];
 
 const URGENCIES = [
-  { value: "URGENT", label: "🔴 Cần ngay", color: "#EF4444" },
-  { value: "TODAY", label: "🟠 Trong hôm nay", color: "#F97316" },
-  { value: "SCHEDULED", label: "🟢 Có thể hẹn", color: "#22C55E" },
+  { value: "URGENT", label: "Cần ngay", color: "#EF4444", icon: "alert-circle" },
+  { value: "TODAY", label: "Trong hôm nay", color: "#F97316", icon: "time-outline" },
+  { value: "SCHEDULED", label: "Có thể hẹn", color: "#22C55E", icon: "calendar-outline" },
 ];
 
 function formatTime(d) {
@@ -34,6 +35,10 @@ function formatTime(d) {
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return "Vừa xong";
   if (mins < 60) return `${mins} phút trước`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} ngày trước`;
   return new Date(d).toLocaleDateString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -44,11 +49,10 @@ function formatDistance(m) {
 }
 
 // ─── SOS Card ─────────────────────────────────────
-function SOSCard({ item, onRespond, onPress }) {
+function SOSCard({ item, onRespond, onPress, isOwner }) {
   const urgencyConfig = URGENCIES.find(u => u.value === item.urgency) || URGENCIES[1];
   return (
     <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => onPress?.(item)}>
-      {/* Header */}
       <View style={styles.cardHeader}>
         <View style={styles.cardAvatar}>
           <Text style={styles.cardAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
@@ -62,22 +66,23 @@ function SOSCard({ item, onRespond, onPress }) {
         )}
       </View>
 
-      {/* Category badge */}
       <View style={styles.cardCategory}>
         <Ionicons name={item.category_icon || "help-outline"} size={16} color={colors.primary} />
-        <Text style={styles.cardCategoryText}>{item.category_name || "Yêu cầu"}</Text>
+        <Text style={styles.cardCategoryText}>{item.category_name || "Yêu cầu hỗ trợ"}</Text>
       </View>
 
-      {/* Description */}
       <Text style={styles.cardDesc} numberOfLines={3}>{item.description}</Text>
 
-      {/* Urgency + Radius */}
       <View style={styles.cardMeta}>
-        <Text style={[styles.cardUrgency, { color: urgencyConfig.color }]}>{urgencyConfig.label}</Text>
-        <Text style={styles.cardRadius}>🎯 {(item.radius || 1000) >= 1000 ? `${(item.radius || 1000) / 1000}km` : `${item.radius || 1000}m`}</Text>
+        <View style={[styles.urgencyBadge, { backgroundColor: urgencyConfig.color + "20" }]}>
+          <Ionicons name={urgencyConfig.icon} size={14} color={urgencyConfig.color} />
+          <Text style={[styles.urgencyText, { color: urgencyConfig.color }]}>{urgencyConfig.label}</Text>
+        </View>
+        {item.radius && (
+          <Text style={styles.cardRadius}>🎯 Bán kính {item.radius >= 1000 ? `${item.radius / 1000}km` : `${item.radius}m`}</Text>
+        )}
       </View>
 
-      {/* Media */}
       {item.media?.length > 0 && (
         <View style={styles.cardMediaRow}>
           {item.media.slice(0, 3).map((m, i) => (
@@ -87,22 +92,16 @@ function SOSCard({ item, onRespond, onPress }) {
         </View>
       )}
 
-      {/* Response count */}
-      <Text style={styles.cardResponses}>{item.response_count || 0} người đã phản hồi</Text>
+      <Text style={styles.cardResponses}>{item.response_count || 0} người phản hồi</Text>
 
-      {/* Action button */}
-      {!item.is_owner && item.status === "OPEN" && !item.has_responded && (
+      {item.is_owner ? (
+        <View style={styles.ownerBadge}><Text style={styles.ownerBadgeText}>Yêu cầu của bạn</Text></View>
+      ) : item.has_responded ? (
+        <Text style={styles.respondedText}>✅ Đã phản hồi</Text>
+      ) : (
         <TouchableOpacity style={styles.respondBtn} onPress={() => onRespond?.(item)}>
           <Text style={styles.respondText}>TÔI CÓ THỂ HỖ TRỢ</Text>
         </TouchableOpacity>
-      )}
-      {item.has_responded && (
-        <Text style={styles.respondedText}>✅ Đã phản hồi</Text>
-      )}
-      {item.is_owner && (
-        <View style={styles.ownerBadge}>
-          <Text style={styles.ownerBadgeText}>Yêu cầu của bạn</Text>
-        </View>
       )}
     </TouchableOpacity>
   );
@@ -110,12 +109,34 @@ function SOSCard({ item, onRespond, onPress }) {
 
 // ─── Create SOS Modal ─────────────────────────────
 function CreateSOSModal({ visible, onClose, onSubmit }) {
+  const insets = useSafeAreaInsets();
+  const [step, setStep] = useState("category");
   const [categoryId, setCategoryId] = useState(null);
   const [description, setDescription] = useState("");
   const [radius, setRadius] = useState(1000);
   const [urgency, setUrgency] = useState("URGENT");
   const [capturedImages, setCapturedImages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [locationName, setLocationName] = useState("Đang lấy vị trí...");
+  const [currentLoc, setCurrentLoc] = useState(null);
+
+  useEffect(() => {
+    if (visible) {
+      (async () => {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") { setLocationName("Không có quyền truy cập vị trí"); return; }
+        const loc = await Location.getCurrentPositionAsync({});
+        setCurrentLoc(loc.coords);
+        const geocode = await Location.reverseGeocodeAsync(loc.coords);
+        if (geocode.length > 0) {
+          const a = geocode[0];
+          setLocationName([a.street, a.district, a.city, a.region].filter(Boolean).join(", ") || "Vị trí hiện tại");
+        } else {
+          setLocationName("Vị trí hiện tại");
+        }
+      })();
+    }
+  }, [visible]);
 
   async function captureImage() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -123,12 +144,11 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
     const result = await ImagePicker.launchCameraAsync({ quality: 0.8, allowsEditing: false });
     if (result.canceled) return;
     const asset = result.assets[0];
-    // Convert HEIC → JPEG
     const manip = await ImageManipulator.manipulateAsync(asset.uri,
       [{ resize: { width: 1920 } }],
       { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
     );
-    setCapturedImages(prev => [...prev, manip]);
+    setCapturedImages(prev => [...prev, { ...manip, capturedAt: new Date().toISOString() }]);
   }
 
   function removeImage(idx) {
@@ -136,12 +156,12 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
   }
 
   async function handleSubmit() {
+    if (!categoryId) { Alert.alert("Chọn danh mục"); return; }
     if (!description.trim()) { Alert.alert("Nhập mô tả"); return; }
     if (capturedImages.length === 0) { Alert.alert("Chụp ít nhất 1 ảnh"); return; }
     setSubmitting(true);
     try {
       const token = await AsyncStorage.getItem("accessToken");
-      const loc = await Location.getCurrentPositionAsync({});
       const media = [];
       for (const img of capturedImages) {
         const formData = new FormData();
@@ -152,99 +172,162 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
         const uploadData = await uploadRes.json();
         media.push({
           url: uploadData.url,
-          lat: loc.coords.latitude,
-          lng: loc.coords.longitude,
-          locationName: "Vị trí hiện tại",
-          capturedAt: new Date().toISOString(),
+          lat: currentLoc?.latitude || null,
+          lng: currentLoc?.longitude || null,
+          locationName: locationName,
+          capturedAt: img.capturedAt || new Date().toISOString(),
         });
       }
-      await api.post("/sos", {
-        categoryId, description: description.trim(),
-        lat: loc.coords.latitude, lng: loc.coords.longitude,
-        locationName: "Vị trí hiện tại",
-        radius, urgency, media,
-      });
-      Alert.alert("Đã gửi", "Yêu cầu SOS của bạn đã được gửi!");
+      const payload = {
+        categoryId,
+        description: description.trim(),
+        lat: currentLoc?.latitude || 21.0285,
+        lng: currentLoc?.longitude || 105.8542,
+        locationName,
+        radius,
+        urgency,
+        media,
+      };
+      await api.post("/sos", payload);
+      Alert.alert("Đã gửi yêu cầu", "Yêu cầu SOS của bạn đã được gửi đến những người trong khu vực.");
       onSubmit?.();
-      onClose();
+      handleClose();
     } catch (e) {
-      Alert.alert("Lỗi", "Không thể gửi yêu cầu");
+      Alert.alert("Lỗi", "Không thể gửi yêu cầu. Vui lòng thử lại.");
     }
     setSubmitting(false);
   }
 
+  function handleClose() {
+    if (description || capturedImages.length > 0) {
+      Alert.alert("Bỏ yêu cầu?", "Dữ liệu đã nhập sẽ bị mất.", [
+        { text: "Tiếp tục", style: "cancel" },
+        { text: "Bỏ", style: "destructive", onPress: resetForm },
+      ]);
+    } else {
+      resetForm();
+    }
+  }
+
+  function resetForm() {
+    setStep("category");
+    setCategoryId(null);
+    setDescription("");
+    setRadius(1000);
+    setUrgency("URGENT");
+    setCapturedImages([]);
+    setSubmitting(false);
+    onClose();
+  }
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
-        <View style={styles.createSheet}>
-          <View style={styles.createHandle} />
-          <Text style={styles.createTitle}>Tạo yêu cầu SOS</Text>
-          <View style={{ padding: 16, flex: 1 }}>
-            {/* Category */}
-            <Text style={styles.label}>Danh mục</Text>
-            <View style={styles.catRow}>
-              {CATEGORIES.map(c => (
-                <TouchableOpacity key={c.id} style={[styles.catChip, categoryId === c.id && styles.catChipActive]} onPress={() => setCategoryId(c.id)}>
-                  <Ionicons name={c.icon} size={16} color={categoryId === c.id ? "#fff" : colors.primary} />
-                  <Text style={[styles.catChipText, categoryId === c.id && styles.catChipTextActive]}>{c.name}</Text>
-                </TouchableOpacity>
-              ))}
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
+          <View style={[styles.createSheet, { paddingBottom: insets.bottom }]}>
+            <View style={styles.createHandle} />
+            <View style={styles.createHeader}>
+              <Text style={styles.createTitle}>Tạo yêu cầu SOS</Text>
+              <TouchableOpacity onPress={handleClose} style={styles.createCloseBtn}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
             </View>
-
-            {/* Camera */}
-            <Text style={styles.label}>Ảnh hiện trường (tối đa 3 ảnh)</Text>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-              {capturedImages.map((img, i) => (
-                <View key={i} style={{ position: "relative" }}>
-                  <Image source={{ uri: img.uri }} style={{ width: 80, height: 80, borderRadius: 8 }} />
-                  <TouchableOpacity onPress={() => removeImage(i)} style={{ position: "absolute", top: -4, right: -4, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 12, width: 24, height: 24, alignItems: "center", justifyContent: "center" }}>
-                    <Ionicons name="close" size={14} color="#fff" />
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+              {/* Category */}
+              <Text style={styles.label}>Danh mục hỗ trợ</Text>
+              <View style={styles.catRow}>
+                {CATEGORIES.map(c => (
+                  <TouchableOpacity key={c.id} style={[styles.catChip, categoryId === c.id && styles.catChipActive]} onPress={() => setCategoryId(c.id)}>
+                    <Ionicons name={c.icon} size={18} color={categoryId === c.id ? "#fff" : colors.primary} />
+                    <Text style={[styles.catChipText, categoryId === c.id && styles.catChipTextActive]}>{c.name}</Text>
                   </TouchableOpacity>
-                </View>
-              ))}
-              {capturedImages.length < 3 && (
-                <TouchableOpacity onPress={captureImage} style={styles.cameraBtn}>
-                  <Ionicons name="camera-outline" size={28} color={colors.primary} />
-                </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Camera */}
+              <Text style={styles.label}>Ảnh hiện trường</Text>
+              <View style={styles.cameraRow}>
+                {capturedImages.map((img, i) => (
+                  <View key={i} style={styles.cameraThumbWrap}>
+                    <Image source={{ uri: img.uri }} style={styles.cameraThumb} />
+                    <TouchableOpacity onPress={() => removeImage(i)} style={styles.cameraRemove}>
+                      <Ionicons name="close-circle" size={22} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {capturedImages.length < 3 && (
+                  <TouchableOpacity onPress={captureImage} style={styles.cameraAddBtn}>
+                    <Ionicons name="camera-outline" size={32} color={colors.primary} />
+                    <Text style={styles.cameraAddText}>Chụp ảnh</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {capturedImages.length === 0 && (
+                <Text style={styles.hint}>Chụp ít nhất 1 ảnh hiện trường (tối đa 3 ảnh)</Text>
               )}
-            </View>
 
-            {/* Description */}
-            <TextInput
-              style={styles.descInput}
-              placeholder="Mô tả chi tiết..."
-              placeholderTextColor="#8A8D91"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-            />
+              {/* Description */}
+              <Text style={styles.label}>Bạn cần hỗ trợ gì?</Text>
+              <TextInput
+                style={styles.descInput}
+                placeholder="Ví dụ: Xe máy bị thủng lốp, đang ở gần ngã tư..."
+                placeholderTextColor="#9CA3AF"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                textAlignVertical="top"
+              />
 
-            {/* Radius */}
-            <Text style={styles.label}>Bán kính</Text>
-            <View style={styles.radiusRow}>
-              {RADII.map(r => (
-                <TouchableOpacity key={r} style={[styles.chip, radius === r && styles.chipActive]} onPress={() => setRadius(r)}>
-                  <Text style={[styles.chipText, radius === r && styles.chipTextActive]}>{r >= 1000 ? `${r / 1000}km` : `${r}m`}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+              {/* Location */}
+              <Text style={styles.label}>Vị trí của bạn</Text>
+              <View style={styles.locationRow}>
+                <Ionicons name="location-outline" size={20} color={colors.primary} />
+                <Text style={styles.locationText} numberOfLines={2}>{locationName}</Text>
+              </View>
 
-            {/* Urgency */}
-            <Text style={styles.label}>Mức độ</Text>
-            <View style={styles.urgencyRow}>
-              {URGENCIES.map(u => (
-                <TouchableOpacity key={u.value} style={[styles.urgencyChip, urgency === u.value && { backgroundColor: u.color, borderColor: u.color }]} onPress={() => setUrgency(u.value)}>
-                  <Text style={[styles.urgencyText, urgency === u.value && { color: "#fff" }]}>{u.label}</Text>
-                </TouchableOpacity>
-              ))}
+              {/* Radius */}
+              <Text style={styles.label}>Phạm vi tìm người hỗ trợ</Text>
+              <View style={styles.radiusRow}>
+                {RADII.map(r => (
+                  <TouchableOpacity key={r} style={[styles.chip, radius === r && styles.chipActive]} onPress={() => setRadius(r)}>
+                    <Text style={[styles.chipText, radius === r && styles.chipTextActive]}>{r >= 1000 ? `${r / 1000}km` : `${r}m`}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Urgency */}
+              <Text style={styles.label}>Mức độ khẩn cấp</Text>
+              <View style={styles.urgencyRow}>
+                {URGENCIES.map(u => (
+                  <TouchableOpacity
+                    key={u.value}
+                    style={[styles.urgencyCard, urgency === u.value && { backgroundColor: u.color + "15", borderColor: u.color }]}
+                    onPress={() => setUrgency(u.value)}
+                  >
+                    <Ionicons name={u.icon} size={24} color={u.color} />
+                    <Text style={[styles.urgencyCardLabel, urgency === u.value && { color: u.color }]}>{u.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.submitWrap}>
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={submitting}
+                style={[styles.submitBtn, submitting && { opacity: 0.5 }]}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.submitText}>🆘 ĐĂNG YÊU CẦU</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
-
-          <TouchableOpacity onPress={handleSubmit} disabled={submitting} style={[styles.submitBtn, submitting && { opacity: 0.5 }]}>
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>Gửi yêu cầu SOS</Text>}
-          </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -252,16 +335,19 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
 // ─── Main SOS Screen ──────────────────────────────
 export default function SOSScreen() {
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState("radar"); // radar | sos
+  const [tab, setTab] = useState("radar");
   const [sosList, setSosList] = useState([]);
   const [mySos, setMySos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [radius, setRadius] = useState(1000);
   const [showCreate, setShowCreate] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const mapRef = useRef(null);
 
   useFocusEffect(useCallback(() => {
     fetchSOS();
+    getLocation();
     const socket = getSocket();
     if (!socket) return;
     const onNew = (sos) => { setSosList(prev => { if (prev.find(s => s.id === sos.id)) return prev; return [sos, ...prev]; }); };
@@ -270,6 +356,15 @@ export default function SOSScreen() {
     socket.on("sos:new", onNew); socket.on("sos:updated", onUpdated); socket.on("sos:cancelled", onCancelled);
     return () => { socket.off("sos:new", onNew); socket.off("sos:updated", onUpdated); socket.off("sos:cancelled", onCancelled); };
   }, [radius]));
+
+  async function getLocation() {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+      const loc = await Location.getCurrentPositionAsync({});
+      setUserLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+    } catch {}
+  }
 
   async function fetchSOS() {
     setLoading(true);
@@ -281,11 +376,22 @@ export default function SOSScreen() {
       setSosList(radarRes.data?.sos || []);
       setMySos(mineRes.data?.sos || []);
     } catch (e) {}
-    setLoading(false); setRefreshing(false);
+    setLoading(false);
+    setRefreshing(false);
+  }
+
+  function goToMyLocation() {
+    if (userLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        ...userLocation,
+        latitudeDelta: 0.02,
+        longitudeDelta: 0.02,
+      }, 500);
+    }
   }
 
   async function respondToSOS(item) {
-    Alert.alert("Hỗ trợ?", "Bạn có thể hỗ trợ yêu cầu này?", [
+    Alert.alert("Hỗ trợ yêu cầu này?", item.description, [
       { text: "Huỷ", style: "cancel" },
       { text: "TÔI CÓ THỂ HỖ TRỢ", onPress: async () => {
         try {
@@ -298,7 +404,8 @@ export default function SOSScreen() {
   }
 
   function openSOSDetail(item) {
-    Alert.alert("Chi tiết SOS", `${item.description}\n\n📍 ${item.location_name || ""}\n📏 ${formatDistance(item.distance)}`, [
+    const statusLabels = { OPEN: "Đang mở", MATCHING: "Đang ghép", ACCEPTED: "Đã chấp nhận", IN_PROGRESS: "Đang xử lý", COMPLETED: "Hoàn thành", CANCELLED: "Đã huỷ" };
+    Alert.alert("Chi tiết SOS", `${item.description}\n\nDanh mục: ${item.category_name || "Khác"}\nTrạng thái: ${statusLabels[item.status] || item.status}\n📍 ${item.distance != null ? formatDistance(item.distance) : item.location_name || ""}\n📏 Bán kính: ${item.radius >= 1000 ? `${item.radius / 1000}km` : `${item.radius}m`}`, [
       { text: "Đóng", style: "cancel" },
     ]);
   }
@@ -327,102 +434,217 @@ export default function SOSScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Radius filter (radar only) */}
-      {tab === "radar" && (
-        <View style={styles.radiusRow}>
-          <Text style={styles.radiusLabel}>Bán kính:</Text>
-          {RADII.map(r => (
-            <TouchableOpacity key={r} style={[styles.chip, radius === r && styles.chipActive]} onPress={() => { setRadius(r); }}>
-              <Text style={[styles.chipText, radius === r && styles.chipTextActive]}>{r >= 1000 ? `${r / 1000}km` : `${r}m`}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* List */}
-      {loading ? (
-        <View style={{ paddingTop: 40 }}><ActivityIndicator color={colors.primary} /></View>
-      ) : (
-        <FlatList
-          data={data}
-          keyExtractor={(item) => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSOS(); }} tintColor={colors.primary} />}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
-          ListEmptyComponent={
-            <View style={{ alignItems: "center", marginTop: 60, paddingHorizontal: 20 }}>
-              <Ionicons name={tab === "radar" ? "map-outline" : "flag-outline"} size={56} color="#ccc" />
-              <Text style={{ fontSize: 15, color: "#65676B", marginTop: 12, textAlign: "center" }}>
-                {tab === "radar" ? "Không có yêu cầu SOS nào trong khu vực" : "Bạn chưa có yêu cầu SOS nào"}
-              </Text>
+      {/* Radar Tab */}
+      {tab === "radar" ? (
+        <>
+          {/* Map */}
+          {userLocation ? (
+            <View style={styles.mapContainer}>
+              <MapView
+                ref={mapRef}
+                style={styles.map}
+                provider={PROVIDER_DEFAULT}
+                initialRegion={{
+                  latitude: userLocation.latitude,
+                  longitude: userLocation.longitude,
+                  latitudeDelta: 0.05,
+                  longitudeDelta: 0.05,
+                }}
+                showsUserLocation
+                showsMyLocationButton={false}
+              >
+                <UrlTile
+                  urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  maximumZ={19}
+                  flipY={false}
+                />
+                {/* SOS Markers */}
+                {sosList.filter(s => s.lat && s.lng).map(sos => (
+                  <Marker
+                    key={sos.id}
+                    coordinate={{ latitude: parseFloat(sos.lat), longitude: parseFloat(sos.lng) }}
+                    title={sos.category_name || "Yêu cầu hỗ trợ"}
+                    description={sos.description?.slice(0, 50)}
+                    pinColor="#EF4444"
+                  />
+                ))}
+                {/* Radius circle */}
+                <Circle
+                  center={{ latitude: userLocation.latitude, longitude: userLocation.longitude }}
+                  radius={radius}
+                  fillColor="rgba(37, 99, 235, 0.08)"
+                  strokeColor="rgba(37, 99, 235, 0.3)"
+                  strokeWidth={2}
+                />
+              </MapView>
+              {/* My Location Button */}
+              <TouchableOpacity style={styles.myLocBtn} onPress={goToMyLocation}>
+                <Ionicons name="locate-outline" size={22} color={colors.primary} />
+              </TouchableOpacity>
             </View>
-          }
-          renderItem={({ item }) => (
-            <SOSCard item={item} onRespond={respondToSOS} onPress={openSOSDetail} />
+          ) : (
+            <View style={[styles.mapPlaceholder, { height: 250 }]}>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={styles.mapPlaceholderText}>Đang tải bản đồ...</Text>
+            </View>
           )}
-        />
+
+          {/* Radius selector */}
+          <View style={styles.radiusBar}>
+            <Text style={styles.radiusBarLabel}>Bán kính:</Text>
+            <View style={styles.radiusBarChips}>
+              {RADII.map(r => (
+                <TouchableOpacity key={r} style={[styles.chip, radius === r && styles.chipActive]} onPress={() => { setRadius(r); }}>
+                  <Text style={[styles.chipText, radius === r && styles.chipTextActive]}>{r >= 1000 ? `${r / 1000}km` : `${r}m`}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* SOS List */}
+          <View style={styles.sosListHeader}>
+            <Text style={styles.sosListTitle}>Yêu cầu gần bạn</Text>
+            <Text style={styles.sosListCount}>{sosList.length} yêu cầu</Text>
+          </View>
+          {loading ? (
+            <View style={{ padding: 20, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
+          ) : (
+            <FlatList
+              data={sosList}
+              keyExtractor={(item) => item.id}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSOS(); }} tintColor={colors.primary} />}
+              contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 80 }}
+              ListEmptyComponent={
+                <View style={{ alignItems: "center", paddingVertical: 40, paddingHorizontal: 20 }}>
+                  <Ionicons name="map-outline" size={48} color="#D1D5DB" />
+                  <Text style={{ fontSize: 16, fontWeight: "600", color: "#6B7280", marginTop: 12 }}>Không có yêu cầu hỗ trợ gần bạn</Text>
+                  <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6, textAlign: "center" }}>
+                    Khi có yêu cầu phù hợp trong bán kính của bạn, chúng sẽ xuất hiện tại đây.
+                  </Text>
+                  <TouchableOpacity onPress={() => { fetchSOS(); }} style={styles.retryBtn}>
+                    <Text style={styles.retryText}>Tìm lại</Text>
+                  </TouchableOpacity>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <SOSCard item={item} onRespond={respondToSOS} onPress={openSOSDetail} />
+              )}
+            />
+          )}
+        </>
+      ) : (
+        /* My SOS Tab */
+        loading ? (
+          <View style={{ paddingTop: 40 }}><ActivityIndicator color={colors.primary} /></View>
+        ) : (
+          <FlatList
+            data={mySos}
+            keyExtractor={(item) => item.id}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSOS(); }} tintColor={colors.primary} />}
+            contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 80 }}
+            ListEmptyComponent={
+              <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                <Ionicons name="flag-outline" size={48} color="#D1D5DB" />
+                <Text style={{ fontSize: 16, fontWeight: "600", color: "#6B7280", marginTop: 12 }}>Bạn chưa có yêu cầu SOS nào</Text>
+                <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.retryBtn, { marginTop: 16 }]}>
+                  <Text style={styles.retryText}>Tạo yêu cầu</Text>
+                </TouchableOpacity>
+              </View>
+            }
+            renderItem={({ item }) => (
+              <SOSCard item={item} onPress={openSOSDetail} isOwner />
+            )}
+          />
+        )
       )}
 
-      <CreateSOSModal visible={showCreate} onClose={() => { setShowCreate(false); }} onSubmit={() => fetchSOS()} />
+      <CreateSOSModal visible={showCreate} onClose={() => setShowCreate(false)} onSubmit={() => { fetchSOS(); }} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, backgroundColor: "#fff" },
+  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12, backgroundColor: "#fff" },
   title: { fontSize: 24, fontWeight: "700", color: "#000" },
-  headerCreateBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center" },
+  headerCreateBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#EF4444", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
   // Tab
-  tabBar: { flexDirection: "row", paddingHorizontal: 16, marginBottom: 8, gap: 8 },
-  tab: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: "#F0F2F5", gap: 4 },
+  tabBar: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 8, backgroundColor: "#fff", gap: 8 },
+  tab: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: "#F3F4F6", gap: 6 },
   tabActive: { backgroundColor: colors.primary },
-  tabText: { fontSize: 14, fontWeight: "500", color: "#65676B" },
+  tabText: { fontSize: 14, fontWeight: "500", color: "#6B7280" },
   tabTextActive: { color: "#fff" },
-  // Radius
-  radiusRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 8, gap: 6 },
-  radiusLabel: { fontSize: 13, color: "#65676B", fontWeight: "500", marginRight: 4 },
-  chip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16, backgroundColor: "#F0F2F5" },
+  // Map
+  mapContainer: { height: 280, position: "relative" },
+  map: { flex: 1 },
+  mapPlaceholder: { backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
+  mapPlaceholderText: { fontSize: 14, color: "#6B7280", marginTop: 8 },
+  myLocBtn: { position: "absolute", bottom: 12, right: 12, width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
+  // Radius bar
+  radiusBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
+  radiusBarLabel: { fontSize: 13, fontWeight: "500", color: "#6B7280", marginRight: 8 },
+  radiusBarChips: { flexDirection: "row", gap: 6 },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: "#F3F4F6" },
   chipActive: { backgroundColor: colors.primary },
-  chipText: { fontSize: 12, color: "#65676B" },
+  chipText: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
   chipTextActive: { color: "#fff" },
+  // SOS list header
+  sosListHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12, backgroundColor: "#F9FAFB" },
+  sosListTitle: { fontSize: 16, fontWeight: "600", color: "#111827" },
+  sosListCount: { fontSize: 13, color: "#6B7280" },
   // Card
-  card: { backgroundColor: "#fff", padding: 16, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
-  cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  cardAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 10 },
-  cardAvatarText: { fontSize: 14, fontWeight: "700", color: colors.primary },
-  cardUserName: { fontSize: 14, fontWeight: "600", color: "#000" },
-  cardTime: { fontSize: 11, color: "#8A8D91", marginTop: 1 },
-  cardDistance: { fontSize: 13, color: colors.primary, fontWeight: "500" },
-  cardCategory: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, alignSelf: "flex-start", marginBottom: 8, gap: 4 },
+  card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12, elevation: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  cardAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  cardAvatarText: { fontSize: 16, fontWeight: "700", color: colors.primary },
+  cardUserName: { fontSize: 15, fontWeight: "600", color: "#111827" },
+  cardTime: { fontSize: 12, color: "#9CA3AF", marginTop: 2 },
+  cardDistance: { fontSize: 14, color: colors.primary, fontWeight: "600" },
+  cardCategory: { flexDirection: "row", alignItems: "center", backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, alignSelf: "flex-start", marginBottom: 8, gap: 6 },
   cardCategoryText: { fontSize: 13, fontWeight: "500", color: colors.primary },
-  cardDesc: { fontSize: 14, color: "#000", lineHeight: 20, marginBottom: 8 },
-  cardMeta: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
-  cardUrgency: { fontSize: 13, fontWeight: "600" },
-  cardRadius: { fontSize: 13, color: "#65676B" },
-  cardMediaRow: { flexDirection: "row", gap: 4, marginBottom: 8 },
-  cardMediaThumb: { width: 60, height: 60, borderRadius: 6, backgroundColor: "#F0F2F5" },
-  cardMediaMore: { fontSize: 12, color: "#65676B", alignSelf: "center" },
-  cardResponses: { fontSize: 12, color: "#65676B", marginBottom: 8 },
-  respondBtn: { backgroundColor: colors.primary, padding: 12, borderRadius: 10, alignItems: "center" },
-  respondText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  respondedText: { fontSize: 13, color: "#22C55E", fontWeight: "600", textAlign: "center" },
-  ownerBadge: { backgroundColor: "#F0F2F5", padding: 8, borderRadius: 8, alignItems: "center" },
-  ownerBadgeText: { fontSize: 12, color: "#65676B" },
-  // Create SOS sheet
-  createSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "90%" },
-  createHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E5E5", alignSelf: "center", marginTop: 10, marginBottom: 8 },
-  createTitle: { fontSize: 18, fontWeight: "700", color: "#000", textAlign: "center", marginBottom: 8 },
-  label: { fontSize: 14, fontWeight: "600", color: "#000", marginBottom: 8, marginTop: 4 },
-  catRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
-  catChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16, backgroundColor: "#F0F2F5", gap: 4 },
-  catChipActive: { backgroundColor: colors.primary },
-  catChipText: { fontSize: 12, color: colors.primary, fontWeight: "500" },
+  cardDesc: { fontSize: 14, color: "#374151", lineHeight: 20, marginBottom: 10 },
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" },
+  urgencyBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
+  urgencyText: { fontSize: 12, fontWeight: "600" },
+  cardRadius: { fontSize: 12, color: "#6B7280" },
+  cardMediaRow: { flexDirection: "row", gap: 6, marginBottom: 10 },
+  cardMediaThumb: { width: 64, height: 64, borderRadius: 8, backgroundColor: "#F3F4F6" },
+  cardMediaMore: { fontSize: 12, color: "#6B7280", alignSelf: "center", marginLeft: 4 },
+  cardResponses: { fontSize: 12, color: "#9CA3AF", marginBottom: 10 },
+  respondBtn: { backgroundColor: colors.primary, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
+  respondText: { color: "#fff", fontWeight: "700", fontSize: 14, letterSpacing: 0.5 },
+  respondedText: { fontSize: 13, color: "#22C55E", fontWeight: "600", textAlign: "center", paddingVertical: 8 },
+  ownerBadge: { backgroundColor: "#F3F4F6", paddingVertical: 10, borderRadius: 10, alignItems: "center" },
+  ownerBadgeText: { fontSize: 13, color: "#6B7280", fontWeight: "500" },
+  retryBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
+  retryText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  // Create SOS
+  createSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "92%" },
+  createHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginTop: 10, marginBottom: 4 },
+  createHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
+  createTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
+  createCloseBtn: { padding: 4 },
+  label: { fontSize: 14, fontWeight: "600", color: "#374151", marginBottom: 8, marginTop: 8 },
+  hint: { fontSize: 12, color: "#9CA3AF", marginTop: 4, marginBottom: 4 },
+  catRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  catChip: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: "#F3F4F6", gap: 6, borderWidth: 1, borderColor: "transparent" },
+  catChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  catChipText: { fontSize: 13, color: colors.primary, fontWeight: "500" },
   catChipTextActive: { color: "#fff" },
-  cameraBtn: { width: 80, height: 80, borderRadius: 8, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#E5E5E5", borderStyle: "dashed" },
-  descInput: { backgroundColor: "#F0F2F5", borderRadius: 12, padding: 12, fontSize: 14, color: "#000", minHeight: 80, textAlignVertical: "top", marginBottom: 12 },
-  urgencyRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  urgencyChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1, borderColor: "#E5E5E5" },
-  urgencyText: { fontSize: 13, fontWeight: "500" },
-  submitBtn: { backgroundColor: "#EF4444", padding: 14, borderRadius: 12, margin: 16, alignItems: "center" },
-  submitText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+  cameraRow: { flexDirection: "row", gap: 10, marginBottom: 4 },
+  cameraThumbWrap: { position: "relative" },
+  cameraThumb: { width: 88, height: 88, borderRadius: 12, backgroundColor: "#F3F4F6" },
+  cameraRemove: { position: "absolute", top: -6, right: -6 },
+  cameraAddBtn: { width: 88, height: 88, borderRadius: 12, backgroundColor: "#F3F4F6", borderWidth: 1.5, borderColor: "#D1D5DB", borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
+  cameraAddText: { fontSize: 10, color: colors.primary, marginTop: 4, fontWeight: "500" },
+  descInput: { backgroundColor: "#F9FAFB", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 14, fontSize: 14, color: "#111827", minHeight: 100, textAlignVertical: "top", lineHeight: 20 },
+  locationRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#E5E7EB", gap: 8 },
+  locationText: { fontSize: 14, color: "#6B7280", flex: 1 },
+  radiusRow: { flexDirection: "row", gap: 8, marginBottom: 4 },
+  urgencyRow: { flexDirection: "row", gap: 10, marginBottom: 8 },
+  urgencyCard: { flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: "#E5E7EB", backgroundColor: "#F9FAFB", gap: 6 },
+  urgencyCardLabel: { fontSize: 12, fontWeight: "600", color: "#6B7280", textAlign: "center" },
+  submitWrap: { paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 0.5, borderTopColor: "#E5E7EB" },
+  submitBtn: { backgroundColor: "#EF4444", paddingVertical: 16, borderRadius: 14, alignItems: "center", elevation: 2, shadowColor: "#EF4444", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+  submitText: { color: "#fff", fontWeight: "700", fontSize: 16, letterSpacing: 0.5 },
 });
