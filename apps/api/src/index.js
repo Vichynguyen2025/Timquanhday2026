@@ -16,6 +16,7 @@ import uploadRoutes from './routes/upload.js';
 import postRoutes, { setSocketIO } from './routes/posts.js';
 
 const app = express();
+app.set('trust proxy', true);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: process.env.CORS_ORIGIN?.split(',') || '*', credentials: true },

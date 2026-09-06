@@ -42,6 +42,14 @@ export default function ChatDetailScreen({ route, navigation }) {
   // Realtime presence: check if other user is online
   const isOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : (otherUser?.is_online === 1);
 
+  // Resolve image URL: handle relative paths from old messages
+  function resolveUrl(url) {
+    if (!url) return null;
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (url.startsWith("/uploads/")) return "https://timquanhday.de" + url;
+    return url;
+  }
+
   useEffect(() => {
     fetchMessages();
     api.get("/conversations/" + conversationId).then((res) => {
@@ -334,7 +342,7 @@ export default function ChatDetailScreen({ route, navigation }) {
     const isMine = item.sender_id === user?.id;
     const isImage = item.type === "image";
     const isFile = item.type === "file";
-    const attUrl = item.metadata?.attachmentUrl || item.attachmentUrl;
+    const attUrl = resolveUrl(item.metadata?.attachmentUrl || item.attachmentUrl);
     const reactions = item.reactions || [];
     const isFailed = item.status === "failed";
     const isSending = item.status === "sending" || item.id?.startsWith("temp_");
@@ -374,7 +382,13 @@ export default function ChatDetailScreen({ route, navigation }) {
                   </View>
                 )}
                 {isImage && attUrl ? (
-                  <Image source={{ uri: attUrl }} style={styles.image} />
+                  <Image source={{ uri: attUrl }} style={styles.image}
+                    onError={(e) => console.log("Image error:", attUrl, e.nativeEvent?.error)}
+                  />
+                ) : isImage && !attUrl ? (
+                  <View style={[styles.image, { backgroundColor: "#F0F2F5", justifyContent: "center", alignItems: "center" }]}>
+                    <Ionicons name="image-outline" size={32} color="#ccc" />
+                  </View>
                 ) : isFile ? (
                   <View style={styles.fileRow}>
                     <Ionicons name="document-outline" size={22} color={isMine ? "#fff" : colors.primary} />
