@@ -11,7 +11,26 @@ export function setSocketIO(socketIO) {
   io = socketIO;
 }
 
-// Create post
+// Helper: enrich a post with user data and is_liked/is_saved flags
+async function enrichPost(post, userId) {
+  if (!post) return null;
+  const isLiked = await queryOne('SELECT 1 FROM post_likes WHERE post_id = ? AND user_id = ?', [post.id, userId]);
+  const isSaved = await queryOne('SELECT 1 FROM post_saves WHERE post_id = ? AND user_id = ?', [post.id, userId]);
+  const user = await queryOne('SELECT name, avatar FROM users WHERE id = ?', [post.user_id]);
+  return {
+    ...post,
+    user_name: user?.name || post.user_name,
+    user_avatar: user?.avatar || post.user_avatar,
+    like_count: post.like_count || 0,
+    comment_count: post.comment_count || 0,
+    share_count: post.share_count || 0,
+    save_count: post.save_count || 0,
+    is_liked: !!isLiked,
+    is_saved: !!isSaved,
+  };
+}
+
+// ─── Create Post ────────────────────────────────
 router.post('/', authenticate, async (req, res) => {
   try {
     const { content, imageUrl, lat, lng } = req.body;
@@ -24,15 +43,8 @@ router.post('/', authenticate, async (req, res) => {
       [postId, req.user.id, content || '', imageUrl || null, postType, lat || null, lng || null]
     );
 
-    const post = await queryOne(
-      `SELECT p.*, u.name as user_name, u.avatar as user_avatar,
-        COALESCE(p.like_count, 0) as like_count, COALESCE(p.comment_count, 0) as comment_count,
-        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked
-      FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
-      [req.user.id, postId]
-    );
+    const post = await enrichPost({ id: postId, user_id: req.user.id, content: content || '', image_url: imageUrl || null, type: postType, lat: lat || null, lng: lng || null, like_count: 0, comment_count: 0, share_count: 0, save_count: 0, created_at: new Date() }, req.user.id);
 
-    // Broadcast to all connected users
     if (io) {
       io.emit('post:new', post);
     }
@@ -44,16 +56,15 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// Get feed (nearby posts) with cursor pagination
+// ─── Get Feed (with cursor pagination) ──────────
 router.get('/', authenticate, async (req, res) => {
   try {
     const radius = parseInt(req.query.radius || '500');
     const limit = Math.min(parseInt(req.query.limit || '20'), 50);
     const before = req.query.before || null;
 
-    let posts;
     let conditions = [];
-    let params = [req.user.id];
+    let params = [req.user.id, req.user.id];
 
     // If user has location, filter by radius
     const userLoc = await query('SELECT lat, lng FROM user_locations WHERE user_id = ?', [req.user.id]);
@@ -78,10 +89,14 @@ router.get('/', authenticate, async (req, res) => {
 
     const where = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    posts = await query(`
+    const posts = await query(`
       SELECT p.*, u.name as user_name, u.avatar as user_avatar,
-        COALESCE(p.like_count, 0) as like_count, COALESCE(p.comment_count, 0) as comment_count,
-        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked
+        COALESCE(p.like_count, 0) as like_count,
+        COALESCE(p.comment_count, 0) as comment_count,
+        COALESCE(p.share_count, 0) as share_count,
+        COALESCE(p.save_count, 0) as save_count,
+        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked,
+        (SELECT COUNT(*) FROM post_saves WHERE post_id = p.id AND user_id = ?) as is_saved
       FROM posts p
       JOIN users u ON p.user_id = u.id
       ${where}
@@ -89,17 +104,97 @@ router.get('/', authenticate, async (req, res) => {
       LIMIT ?
     `, [...params, limit]);
 
-    // Convert is_liked from count to boolean
-    posts = posts.map(p => ({ ...p, is_liked: p.is_liked > 0 }));
+    const enriched = posts.map(p => ({
+      ...p,
+      is_liked: p.is_liked > 0,
+      is_saved: p.is_saved > 0,
+    }));
 
-    res.json({ posts, hasMore: posts.length >= limit });
+    res.json({ posts: enriched, hasMore: posts.length >= limit });
   } catch (err) {
     console.error('[Feed] Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Like/unlike post
+// ─── Get Single Post ────────────────────────────
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const post = await queryOne(`
+      SELECT p.*, u.name as user_name, u.avatar as user_avatar,
+        COALESCE(p.like_count, 0) as like_count,
+        COALESCE(p.comment_count, 0) as comment_count,
+        COALESCE(p.share_count, 0) as share_count,
+        COALESCE(p.save_count, 0) as save_count,
+        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked,
+        (SELECT COUNT(*) FROM post_saves WHERE post_id = p.id AND user_id = ?) as is_saved
+      FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?
+    `, [req.user.id, req.user.id, req.params.id]);
+
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    post.is_liked = post.is_liked > 0;
+    post.is_saved = post.is_saved > 0;
+
+    res.json(post);
+  } catch (err) {
+    console.error('[Posts] Get error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Update Post ────────────────────────────────
+router.patch('/:id', authenticate, async (req, res) => {
+  try {
+    const post = await queryOne('SELECT * FROM posts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!post) return res.status(404).json({ error: 'Post not found or unauthorized' });
+
+    const { content, imageUrl } = req.body;
+    if (content !== undefined) await query('UPDATE posts SET content = ? WHERE id = ?', [content, req.params.id]);
+    if (imageUrl !== undefined) await query('UPDATE posts SET image_url = ? WHERE id = ?', [imageUrl, req.params.id]);
+
+    const updated = await queryOne(
+      `SELECT p.*, u.name as user_name, u.avatar as user_avatar,
+        COALESCE(p.like_count, 0) as like_count, COALESCE(p.comment_count, 0) as comment_count,
+        COALESCE(p.share_count, 0) as share_count, COALESCE(p.save_count, 0) as save_count,
+        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked,
+        (SELECT COUNT(*) FROM post_saves WHERE post_id = p.id AND user_id = ?) as is_saved
+      FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
+      [req.user.id, req.user.id, req.params.id]
+    );
+    if (updated) { updated.is_liked = updated.is_liked > 0; updated.is_saved = updated.is_saved > 0; }
+
+    if (io) io.emit('post:updated', updated);
+
+    res.json(updated);
+  } catch (err) {
+    console.error('[Posts] Update error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Delete Post ────────────────────────────────
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    const post = await queryOne('SELECT * FROM posts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    if (!post) return res.status(404).json({ error: 'Post not found or unauthorized' });
+
+    await query('DELETE FROM post_likes WHERE post_id = ?', [req.params.id]);
+    await query('DELETE FROM post_comments WHERE post_id = ?', [req.params.id]);
+    await query('DELETE FROM post_saves WHERE post_id = ?', [req.params.id]);
+    await query('DELETE FROM post_shares WHERE post_id = ?', [req.params.id]);
+    await query('DELETE FROM posts WHERE id = ?', [req.params.id]);
+
+    if (io) io.emit('post:deleted', { postId: req.params.id });
+
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error('[Posts] Delete error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Like / Unlike ──────────────────────────────
 router.post('/:id/like', authenticate, async (req, res) => {
   try {
     const post = await queryOne('SELECT * FROM posts WHERE id = ?', [req.params.id]);
@@ -123,43 +218,146 @@ router.post('/:id/like', authenticate, async (req, res) => {
     const updatedPost = await queryOne(
       `SELECT p.*, u.name as user_name, u.avatar as user_avatar,
         COALESCE(p.like_count, 0) as like_count, COALESCE(p.comment_count, 0) as comment_count,
-        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked
+        COALESCE(p.share_count, 0) as share_count, COALESCE(p.save_count, 0) as save_count,
+        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked,
+        (SELECT COUNT(*) FROM post_saves WHERE post_id = p.id AND user_id = ?) as is_saved
       FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
-      [req.user.id, req.params.id]
+      [req.user.id, req.user.id, req.params.id]
     );
+    if (updatedPost) { updatedPost.is_liked = updatedPost.is_liked > 0; updatedPost.is_saved = updatedPost.is_saved > 0; }
 
     if (io) {
-      io.emit('post:liked', {
+      io.emit(liked ? 'post:liked' : 'post:unliked', {
         postId: req.params.id,
         userId: req.user.id,
         liked,
-        post: updatedPost ? { ...updatedPost, is_liked: updatedPost.is_liked > 0 } : null,
+        post: updatedPost,
       });
     }
 
-    res.json({ liked, post: updatedPost ? { ...updatedPost, is_liked: updatedPost.is_liked > 0 } : null });
+    res.json({ liked, post: updatedPost });
   } catch (err) {
     console.error('[Posts] Like error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Delete post
-router.delete('/:id', authenticate, async (req, res) => {
+// ─── Comment ────────────────────────────────────
+router.post('/:id/comments', authenticate, async (req, res) => {
   try {
-    const post = await queryOne('SELECT * FROM posts WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
-    if (!post) return res.status(404).json({ error: 'Post not found or unauthorized' });
+    const { content, parentId } = req.body;
+    if (!content) return res.status(400).json({ error: 'Content required' });
 
-    await query('DELETE FROM post_likes WHERE post_id = ?', [req.params.id]);
-    await query('DELETE FROM posts WHERE id = ?', [req.params.id]);
+    const post = await queryOne('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const commentId = crypto.randomUUID();
+    await query(
+      'INSERT INTO post_comments (id, post_id, user_id, content, parent_id) VALUES (?, ?, ?, ?, ?)',
+      [commentId, req.params.id, req.user.id, content, parentId || null]
+    );
+    await query('UPDATE posts SET comment_count = COALESCE(comment_count, 0) + 1 WHERE id = ?', [req.params.id]);
+
+    const comment = await queryOne(
+      `SELECT c.*, u.name as user_name, u.avatar as user_avatar FROM post_comments c JOIN users u ON c.user_id = u.id WHERE c.id = ?`,
+      [commentId]
+    );
+
+    if (post.user_id !== req.user.id) {
+      await createNotification(post.user_id, 'comment', 'Bình luận', `${req.user.name || 'Ai đó'} đã bình luận bài viết của bạn`, { postId: req.params.id, commentId });
+    }
+
+    // Update post counts
+    const updatedPost = await queryOne(
+      `SELECT p.*, COALESCE(p.comment_count, 0) as comment_count, COALESCE(p.like_count, 0) as like_count,
+        COALESCE(p.share_count, 0) as share_count, COALESCE(p.save_count, 0) as save_count
+      FROM posts p WHERE p.id = ?`, [req.params.id]
+    );
 
     if (io) {
-      io.emit('post:deleted', { postId: req.params.id });
+      io.emit('comment:new', { ...comment, post: { ...updatedPost, id: req.params.id } });
     }
+
+    res.status(201).json(comment);
+  } catch (err) {
+    console.error('[Posts] Comment error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Get Comments ───────────────────────────────
+router.get('/:id/comments', authenticate, async (req, res) => {
+  try {
+    const comments = await query(`
+      SELECT c.*, u.name as user_name, u.avatar as user_avatar
+      FROM post_comments c JOIN users u ON c.user_id = u.id
+      WHERE c.post_id = ?
+      ORDER BY c.created_at ASC
+    `, [req.params.id]);
+
+    res.json(comments);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Delete Comment ─────────────────────────────
+router.delete('/comments/:commentId', authenticate, async (req, res) => {
+  try {
+    const comment = await queryOne('SELECT * FROM post_comments WHERE id = ? AND user_id = ?', [req.params.commentId, req.user.id]);
+    if (!comment) return res.status(404).json({ error: 'Comment not found or unauthorized' });
+
+    const postId = comment.post_id;
+    await query('DELETE FROM post_comments WHERE id = ?', [req.params.commentId]);
+    await query('UPDATE posts SET comment_count = GREATEST(COALESCE(comment_count, 0) - 1, 0) WHERE id = ?', [postId]);
+
+    if (io) io.emit('comment:deleted', { commentId: req.params.commentId, postId });
 
     res.json({ deleted: true });
   } catch (err) {
-    console.error('[Posts] Delete error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Save / Unsave ──────────────────────────────
+router.post('/:id/save', authenticate, async (req, res) => {
+  try {
+    const post = await queryOne('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const existing = await queryOne('SELECT * FROM post_saves WHERE post_id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    let saved;
+    if (existing) {
+      await query('DELETE FROM post_saves WHERE post_id = ? AND user_id = ?', [req.params.id, req.user.id]);
+      await query('UPDATE posts SET save_count = GREATEST(COALESCE(save_count, 0) - 1, 0) WHERE id = ?', [req.params.id]);
+      saved = false;
+    } else {
+      await query('INSERT INTO post_saves (post_id, user_id) VALUES (?, ?)', [req.params.id, req.user.id]);
+      await query('UPDATE posts SET save_count = COALESCE(save_count, 0) + 1 WHERE id = ?', [req.params.id]);
+      saved = true;
+    }
+
+    if (io) io.emit(saved ? 'post:saved' : 'post:unsaved', { postId: req.params.id, userId: req.user.id, saved });
+
+    res.json({ saved });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Share ──────────────────────────────────────
+router.post('/:id/share', authenticate, async (req, res) => {
+  try {
+    const post = await queryOne('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    await query('INSERT INTO post_shares (post_id, user_id) VALUES (?, ?)', [req.params.id, req.user.id]);
+    await query('UPDATE posts SET share_count = COALESCE(share_count, 0) + 1 WHERE id = ?', [req.params.id]);
+
+    if (io) io.emit('post:shared', { postId: req.params.id, userId: req.user.id });
+
+    res.json({ shared: true });
+  } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -44,21 +44,40 @@ export default function FeedScreen() {
       if (post) {
         setPosts((prev) => prev.map((p) => p.id === postId ? post : p));
       } else {
-        setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_liked: liked, like_count: liked ? p.like_count + 1 : p.like_count - 1 } : p));
+        setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_liked: liked, like_count: liked ? p.like_count + 1 : Math.max(p.like_count - 1, 0) } : p));
       }
     };
     const onPostDeleted = ({ postId }) => {
       setPosts((prev) => prev.filter((p) => p.id !== postId));
     };
+    const onCommentNew = ({ post_id, post }) => {
+      if (post) {
+        setPosts((prev) => prev.map((p) => p.id === post_id ? { ...p, comment_count: post.comment_count || (p.comment_count || 0) + 1 } : p));
+      } else {
+        setPosts((prev) => prev.map((p) => p.id === post_id ? { ...p, comment_count: (p.comment_count || 0) + 1 } : p));
+      }
+    };
+    const onPostSaved = ({ postId, saved }) => {
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_saved: saved, save_count: saved ? (p.save_count || 0) + 1 : Math.max((p.save_count || 0) - 1, 0) } : p));
+    };
+    const onPostShared = ({ postId }) => {
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, share_count: (p.share_count || 0) + 1 } : p));
+    };
 
     socket.on("post:new", onPostNew);
     socket.on("post:liked", onPostLiked);
     socket.on("post:deleted", onPostDeleted);
+    socket.on("comment:new", onCommentNew);
+    socket.on("post:saved", onPostSaved);
+    socket.on("post:shared", onPostShared);
 
     return () => {
       socket.off("post:new", onPostNew);
       socket.off("post:liked", onPostLiked);
       socket.off("post:deleted", onPostDeleted);
+      socket.off("comment:new", onCommentNew);
+      socket.off("post:saved", onPostSaved);
+      socket.off("post:shared", onPostShared);
     };
   }, [radius]));
 
@@ -74,12 +93,26 @@ export default function FeedScreen() {
   }
 
   function toggleLike(postId, isLiked) {
-    // Optimistic update
-    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_liked: !isLiked, like_count: isLiked ? p.like_count - 1 : p.like_count + 1 } : p));
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_liked: !isLiked, like_count: isLiked ? Math.max(p.like_count - 1, 0) : p.like_count + 1 } : p));
     api.post("/posts/" + postId + "/like").catch(() => {
-      // Rollback on failure
-      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_liked, like_count: isLiked ? p.like_count + 1 : p.like_count - 1 } : p));
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_liked, like_count: isLiked ? p.like_count + 1 : Math.max(p.like_count - 1, 0) } : p));
     });
+  }
+
+  function toggleSave(postId, isSaved) {
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_saved: !isSaved, save_count: isSaved ? Math.max((p.save_count || 0) - 1, 0) : (p.save_count || 0) + 1 } : p));
+    api.post("/posts/" + postId + "/save").catch(() => {
+      setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, is_saved, save_count: isSaved ? (p.save_count || 0) + 1 : Math.max((p.save_count || 0) - 1, 0) } : p));
+    });
+  }
+
+  function handleShare(postId) {
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, share_count: (p.share_count || 0) + 1 } : p));
+    api.post("/posts/" + postId + "/share").catch(() => {});
+  }
+
+  function handleComment(postId) {
+    // Navigate to post detail or open comment modal
   }
 
   return (
@@ -141,15 +174,15 @@ export default function FeedScreen() {
                     <TouchableOpacity onPress={() => toggleLike(item.id, item.is_liked)} style={styles.postAction}>
                       <Ionicons name={item.is_liked ? "heart" : "heart-outline"} size={22} color={item.is_liked ? "#EF4444" : "#000"} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction}>
+                    <TouchableOpacity onPress={() => handleComment(item.id)} style={styles.postAction}>
                       <Ionicons name="chatbubble-outline" size={21} color="#000" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction}>
+                    <TouchableOpacity onPress={() => handleShare(item.id)} style={styles.postAction}>
                       <Ionicons name="paper-plane-outline" size={21} color="#000" />
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity>
-                    <Ionicons name="bookmark-outline" size={21} color="#000" />
+                  <TouchableOpacity onPress={() => toggleSave(item.id, item.is_saved)}>
+                    <Ionicons name={item.is_saved ? "bookmark" : "bookmark-outline"} size={21} color={item.is_saved ? colors.primary : "#000"} />
                   </TouchableOpacity>
                 </View>
                 {/* Footer */}

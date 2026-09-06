@@ -88,23 +88,63 @@ export default function FeedPage() {
     socket.on('post:new', onPostNew);
     socket.on('post:liked', onPostLiked);
     socket.on('post:deleted', onPostDeleted);
+    socket.on('comment:new', onCommentNew);
+    socket.on('post:saved', onPostSaved);
+    socket.on('post:shared', onPostShared);
 
     return () => {
       socket.off('post:new', onPostNew);
       socket.off('post:liked', onPostLiked);
       socket.off('post:deleted', onPostDeleted);
+      socket.off('comment:new', onCommentNew);
+      socket.off('post:saved', onPostSaved);
+      socket.off('post:shared', onPostShared);
     };
   }, [socket]);
 
   const toggleLike = async (postId, isLiked) => {
-    // Optimistic
     setPosts(prev => prev.map(p => p.id === postId ? { ...p, is_liked: !isLiked, like_count: isLiked ? Math.max((p.like_count || 0) - 1, 0) : (p.like_count || 0) + 1 } : p));
     try {
       await API.post(`/posts/${postId}/like`);
     } catch {
-      // Rollback
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, is_liked, like_count: isLiked ? (p.like_count || 0) + 1 : Math.max((p.like_count || 0) - 1, 0) } : p));
     }
+  };
+
+  const toggleSave = async (postId, isSaved) => {
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, is_saved: !isSaved, save_count: isSaved ? Math.max((p.save_count || 0) - 1, 0) : (p.save_count || 0) + 1 } : p));
+    try {
+      await API.post(`/posts/${postId}/save`);
+    } catch {
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, is_saved, save_count: isSaved ? (p.save_count || 0) + 1 : Math.max((p.save_count || 0) - 1, 0) } : p));
+    }
+  };
+
+  const handleShare = async (postId) => {
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, share_count: (p.share_count || 0) + 1 } : p));
+    try { await API.post(`/posts/${postId}/share`); } catch {}
+  };
+
+  const onCommentNew = ({ post_id, post }) => {
+    setPosts(prev => {
+      const updated = prev.map(p => p.id === post_id ? { ...p, comment_count: post?.comment_count || (p.comment_count || 0) + 1 } : p);
+      postsCacheRef.current = updated;
+      return updated;
+    });
+  };
+  const onPostSaved = ({ postId, saved }) => {
+    setPosts(prev => {
+      const updated = prev.map(p => p.id === postId ? { ...p, is_saved: saved, save_count: saved ? (p.save_count || 0) + 1 : Math.max((p.save_count || 0) - 1, 0) } : p);
+      postsCacheRef.current = updated;
+      return updated;
+    });
+  };
+  const onPostShared = ({ postId }) => {
+    setPosts(prev => {
+      const updated = prev.map(p => p.id === postId ? { ...p, share_count: (p.share_count || 0) + 1 } : p);
+      postsCacheRef.current = updated;
+      return updated;
+    });
   };
 
   return (
@@ -196,12 +236,12 @@ export default function FeedPage() {
                   <button className="p-2 rounded-lg hover:bg-gray-50 text-gray-700 transition">
                     <FiMessageCircle size={21} />
                   </button>
-                  <button className="p-2 rounded-lg hover:bg-gray-50 text-gray-700 transition">
+                  <button onClick={() => handleShare(p.id)} className="p-2 rounded-lg hover:bg-gray-50 text-gray-700 transition">
                     <FiShare2 size={21} />
                   </button>
                 </div>
-                <button className="p-2 rounded-lg hover:bg-gray-50 text-gray-700 transition">
-                  <FiBookmark size={21} />
+                <button onClick={() => toggleSave(p.id, p.is_saved)} className="p-2 rounded-lg hover:bg-gray-50 transition">
+                  <FiBookmark size={21} fill={p.is_saved ? 'currentColor' : 'none'} className={p.is_saved ? 'text-primary-500' : 'text-gray-700'} />
                 </button>
               </div>
 
