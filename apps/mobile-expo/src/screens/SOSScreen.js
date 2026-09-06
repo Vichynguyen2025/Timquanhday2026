@@ -223,7 +223,7 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}>
+        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
           <View style={[styles.createSheet, { paddingBottom: insets.bottom }]}>
             <View style={styles.createHandle} />
@@ -619,7 +619,7 @@ const styles = StyleSheet.create({
   retryBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
   retryText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   // Create SOS
-  createSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "92%" },
+  createSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1, maxHeight: "92%" },
   createHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginTop: 10, marginBottom: 4 },
   createHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
   createTitle: { fontSize: 18, fontWeight: "700", color: "#111827" },
