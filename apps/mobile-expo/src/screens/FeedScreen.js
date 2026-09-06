@@ -157,7 +157,7 @@ function ImageGallery({ images, initialIndex, visible, onClose }) {
 }
 
 // ─── Main FeedScreen ─────────────────────────────
-export default function FeedScreen() {
+export default function FeedScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -490,6 +490,9 @@ export default function FeedScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Khám phá</Text>
         <View style={{ flexDirection: "row", gap: 4 }}>
+          <TouchableOpacity onPress={() => navigation?.navigate("Location")} style={styles.headerBtn}>
+            <Ionicons name="location-outline" size={22} color="#000" />
+          </TouchableOpacity>
         </View>
       </View>
 
