@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import API from '../services/api';
-import { FiSend, FiSearch, FiArrowLeft, FiPaperclip } from 'react-icons/fi';
+import { FiSend, FiSearch, FiArrowLeft, FiPaperclip, FiMessageCircle } from 'react-icons/fi';
 
 export default function ChatPage() {
   const { id: activeConvId } = useParams();

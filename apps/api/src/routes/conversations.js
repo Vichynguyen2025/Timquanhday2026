@@ -8,15 +8,14 @@ const router = Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     const conversations = await query(`
-      SELECT c.*, cm2.last_read_at,
+      SELECT c.*,
         (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at,
-        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.created_at > COALESCE(cm2.last_read_at, '1970-01-01') AND m.sender_id != ?) as unread_count
+        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ?) as unread_count
       FROM conversations c
       JOIN conversation_members cm ON c.id = cm.conversation_id AND cm.user_id = ?
-      LEFT JOIN conversation_members cm2 ON c.id = cm2.conversation_id AND cm2.user_id = ?
-      ORDER BY last_message_at DESC
-    `, [req.user.id, req.user.id, req.user.id]);
+      ORDER BY last_message_at DESC`, [req.user.id, req.user.id]
+    );
     res.json(conversations);
   } catch (err) {
     console.error('[Conv] Error:', err);
