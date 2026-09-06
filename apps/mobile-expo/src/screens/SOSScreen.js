@@ -332,6 +332,9 @@ export default function SOSScreen({ navigation }) {
   // Provider management
   const [selectedSOS, setSelectedSOS] = useState(null); // SOS with providers to show
   const [showProviders, setShowProviders] = useState(false);
+  // Helping tab
+  const [helpingSos, setHelpingSos] = useState([]);
+  const [helpingFilter, setHelpingFilter] = useState("PENDING"); // PENDING, ACCEPTED, DECLINED
 
   useFocusEffect(useCallback(() => {
     fetchSOS(); fetchHelperProfile();
@@ -342,8 +345,8 @@ export default function SOSScreen({ navigation }) {
     const socket = getSocket();
     if (!socket) return;
     const onNew = (sos) => { setSosList(prev => { if (prev.find(s => s.id === sos.id)) return prev; return [sos, ...prev]; }); };
-    const onUpdated = (sos) => { setSosList(prev => prev.map(s => s.id === sos.id ? sos : s)); setMySos(prev => prev.map(s => s.id === sos.id ? sos : s)); };
-    const onCancelled = ({ sosId }) => { setSosList(prev => prev.filter(s => s.id !== sosId)); setMySos(prev => prev.filter(s => s.id !== sosId)); };
+    const onUpdated = (sos) => { setSosList(prev => prev.map(s => s.id === sos.id ? sos : s)); setMySos(prev => prev.map(s => s.id === sos.id ? sos : s)); setHelpingSos(prev => prev.map(s => s.id === sos.id ? sos : s)); };
+    const onCancelled = ({ sosId }) => { setSosList(prev => prev.filter(s => s.id !== sosId)); setMySos(prev => prev.filter(s => s.id !== sosId)); setHelpingSos(prev => prev.filter(s => s.id !== sosId)); };
     socket.on("sos:new", onNew); socket.on("sos:updated", onUpdated); socket.on("sos:cancelled", onCancelled);
     return () => { socket.off("sos:new", onNew); socket.off("sos:updated", onUpdated); socket.off("sos:cancelled", onCancelled); };
   }, [radius]));
@@ -360,8 +363,14 @@ export default function SOSScreen({ navigation }) {
   async function fetchSOS() {
     setLoading(true);
     try {
-      const [radarRes, mineRes] = await Promise.all([api.get("/sos", { params: { radius } }), api.get("/sos/mine")]);
-      setSosList(radarRes.data?.sos || []); setMySos(mineRes.data?.sos || []);
+      const [radarRes, mineRes, helpingRes] = await Promise.all([
+        api.get("/sos", { params: { radius } }),
+        api.get("/sos/mine"),
+        api.get("/sos/helping"),
+      ]);
+      setSosList(radarRes.data?.sos || []);
+      setMySos(mineRes.data?.sos || []);
+      setHelpingSos(helpingRes.data?.sos || []);
     } catch (e) {}
     setLoading(false); setRefreshing(false);
   }
@@ -467,10 +476,12 @@ export default function SOSScreen({ navigation }) {
 
       {/* Tab bar */}
       <View style={styles.tabBar}>
-        {["radar", "sos"].map(t => (
+        {["radar", "sos", "helping"].map(t => (
           <TouchableOpacity key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
-            <Ionicons name={t === "radar" ? "map-outline" : "flag-outline"} size={18} color={tab === t ? "#fff" : "#65676B"} />
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t === "radar" ? "Bản đồ" : "Yêu cầu của tôi"}</Text>
+            <Ionicons name={t === "radar" ? "map-outline" : t === "sos" ? "flag-outline" : "hand-left-outline"} size={18} color={tab === t ? "#fff" : "#65676B"} />
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+              {t === "radar" ? "Bản đồ" : t === "sos" ? "Yêu cầu của tôi" : "Hỗ trợ đã gửi"}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -567,6 +578,102 @@ export default function SOSScreen({ navigation }) {
             }}
           />
         )
+      )}
+
+      {/* Helping tab — SOS I've offered to help */}
+      {tab === "helping" && (
+        <View style={{ flex: 1 }}>
+          {/* Filter chips */}
+          <View style={styles.helpingFilterRow}>
+            {[
+              { key: "PENDING", label: "Đang chờ", color: "#F97316" },
+              { key: "ACCEPTED", label: "Đã chấp nhận", color: "#22C55E" },
+              { key: "DECLINED", label: "Đã hủy", color: "#9CA3AF" },
+            ].map(f => (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.helpingFilterChip, helpingFilter === f.key && { backgroundColor: f.color }]}
+                onPress={() => setHelpingFilter(f.key)}
+              >
+                <Text style={[styles.helpingFilterText, helpingFilter === f.key && { color: "#fff" }]}>{f.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {loading ? (
+            <View style={{ paddingTop: 20 }}><ActivityIndicator color={colors.primary} /></View>
+          ) : (
+            <FlatList
+              data={helpingSos.filter(s => {
+                const statusMap = { PENDING: "PENDING", ACCEPTED: "ACCEPTED", DECLINED: "DECLINED" };
+                return s.response_status === statusMap[helpingFilter];
+              })}
+              keyExtractor={(item) => item.id}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSOS(); }} tintColor={colors.primary} />}
+              contentContainerStyle={{ padding: 12, paddingBottom: 16 }}
+              ListEmptyComponent={
+                <View style={{ alignItems: "center", paddingVertical: 40, paddingHorizontal: 20 }}>
+                  <Ionicons name="hand-left-outline" size={48} color="#D1D5DB" />
+                  <Text style={{ fontSize: 16, fontWeight: "600", color: "#6B7280", marginTop: 12, textAlign: "center" }}>
+                    {helpingFilter === "PENDING" ? "Bạn chưa có đề nghị hỗ trợ nào đang chờ" :
+                     helpingFilter === "ACCEPTED" ? "Chưa có đề nghị hỗ trợ nào được chấp nhận" :
+                     "Chưa có đề nghị hỗ trợ nào bị hủy"}
+                  </Text>
+                </View>
+              }
+              renderItem={({ item }) => {
+                const statusData = {
+                  PENDING: { label: "Đang chờ", color: "#F97316", bg: "#FFF7ED" },
+                  ACCEPTED: { label: "Đã chấp nhận", color: "#22C55E", bg: "#F0FDF4" },
+                  DECLINED: { label: "Đã hủy", color: "#9CA3AF", bg: "#F9FAFB" },
+                };
+                const st = statusData[item.response_status] || statusData.PENDING;
+                return (
+                  <View style={styles.helpingCard}>
+                    <View style={styles.helpingCardTop}>
+                      <View style={styles.helpingAvatar}>
+                        <Text style={styles.helpingAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.helpingUserName}>{item.user_name || "Người dùng"}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={styles.helpingCategory}>{item.category_name || "Yêu cầu hỗ trợ"}</Text>
+                          {item.distance != null && <Text style={styles.helpingDist}>📍 {formatDistance(item.distance)}</Text>}
+                        </View>
+                      </View>
+                      <View style={[styles.helpingStatusBadge, { backgroundColor: st.bg }]}>
+                        <View style={[styles.helpingStatusDot, { backgroundColor: st.color }]} />
+                        <Text style={[styles.helpingStatusText, { color: st.color }]}>{st.label}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.helpingDesc} numberOfLines={2}>{item.description}</Text>
+                    <Text style={styles.helpingTime}>{formatTime(item.created_at)}</Text>
+
+                    {item.response_status === "ACCEPTED" && item.response_id && (
+                      <TouchableOpacity
+                        style={styles.helpingChatBtn}
+                        onPress={() => {
+                          // Find the conversation ID from the SOS responses
+                          const acceptedResp = item.responses?.find(r => r.status === "ACCEPTED");
+                          if (acceptedResp) {
+                            setShowProviders(false);
+                            navigation?.navigate("ChatDetail", {
+                              conversationId: item.conversation_id || "",
+                              name: item.user_name || "Người hỗ trợ",
+                            });
+                          }
+                        }}
+                      >
+                        <Ionicons name="chatbubble-ellipses" size={16} color="#fff" />
+                        <Text style={styles.helpingChatText}>Mở tin nhắn</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              }}
+            />
+          )}
+        </View>
       )}
 
       <CreateSOSModal visible={showCreate} onClose={() => setShowCreate(false)} onSubmit={() => { fetchSOS(); }} />
@@ -761,4 +868,22 @@ const styles = StyleSheet.create({
   acceptBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
   rejectBtn: { backgroundColor: "#F3F4F6", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, alignItems: "center", borderWidth: 1, borderColor: "#D1D5DB", minWidth: 70 },
   rejectBtnText: { color: "#6B7280", fontWeight: "600", fontSize: 13 },
+  // Helping tab
+  helpingFilterRow: { flexDirection: "row", paddingHorizontal: 16, paddingVertical: 8, gap: 8 },
+  helpingFilterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: "#F3F4F6" },
+  helpingFilterText: { fontSize: 13, fontWeight: "500", color: "#6B7280" },
+  helpingCard: { backgroundColor: "#fff", borderRadius: 14, padding: 14, marginBottom: 8, elevation: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
+  helpingCardTop: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  helpingAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 10 },
+  helpingAvatarText: { fontSize: 14, fontWeight: "700", color: colors.primary },
+  helpingUserName: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  helpingCategory: { fontSize: 12, color: "#6B7280" },
+  helpingDist: { fontSize: 12, color: colors.primary, fontWeight: "600" },
+  helpingStatusBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, gap: 4 },
+  helpingStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  helpingStatusText: { fontSize: 12, fontWeight: "600" },
+  helpingDesc: { fontSize: 13, color: "#374151", lineHeight: 18, marginBottom: 4 },
+  helpingTime: { fontSize: 11, color: "#9CA3AF", marginBottom: 8 },
+  helpingChatBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 10, gap: 6 },
+  helpingChatText: { color: "#fff", fontWeight: "700", fontSize: 13 },
 });

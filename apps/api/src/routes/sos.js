@@ -117,6 +117,38 @@ router.get('/mine', authenticate, async (req, res) => {
   }
 });
 
+// ─── GET /api/sos/helping — SOS I'm helping ──────
+router.get('/helping', authenticate, async (req, res) => {
+  try {
+    const statusFilter = req.query.status || null; // PENDING, ACCEPTED, REJECTED
+    let sql = `
+      SELECT sr.*, sp.status as response_status, sp.id as response_id
+      FROM sos_responses sp
+      JOIN sos_requests sr ON sr.id = sp.sos_id
+      WHERE sp.provider_id = ?
+    `;
+    const params = [req.user.id];
+    if (statusFilter && ['PENDING', 'ACCEPTED', 'DECLINED'].includes(statusFilter)) {
+      sql += ' AND sp.status = ?';
+      params.push(statusFilter);
+    }
+    sql += ' ORDER BY sp.created_at DESC LIMIT 20';
+
+    const responses = await query(sql, params);
+    const enriched = [];
+    for (const row of responses) {
+      const sos = await enrichSOS(row, req.user.id);
+      if (sos) {
+        enriched.push({ ...sos, response_status: row.response_status, response_id: row.response_id });
+      }
+    }
+    res.json({ sos: enriched });
+  } catch (err) {
+    console.error('[SOS] Helping error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/sos/helper/profile — Helper profile ──
 router.get('/helper/profile', authenticate, async (req, res) => {
   try {
