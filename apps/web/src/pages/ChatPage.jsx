@@ -5,13 +5,13 @@ import { useSocket } from '../contexts/SocketContext';
 import API from '../services/api';
 import {
   FiSend, FiSearch, FiArrowLeft, FiPaperclip, FiMessageCircle,
-  FiMoreVertical, FiTrash2, FiSmile, FiCornerUpLeft, FiChevronLeft,
-  FiX, FiUser, FiClock, FiPhone, FiMapPin, FiInfo
+  FiTrash2, FiSmile, FiCornerUpLeft, FiX, FiUser, FiClock, FiPhone, FiMapPin
 } from 'react-icons/fi';
 
 const EMOJIS = ['❤️', '😍', '😂', '😢', '😡', '👍', '🙏', '🔥', '🎉', '💯'];
 
 function formatTime(dateStr) {
+  if (!dateStr) return '';
   const d = new Date(dateStr);
   const now = new Date();
   const diff = now - d;
@@ -23,6 +23,7 @@ function formatTime(dateStr) {
 }
 
 function formatDate(dateStr) {
+  if (!dateStr) return '';
   const d = new Date(dateStr);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) return 'Hôm nay';
@@ -42,7 +43,6 @@ export default function ChatPage() {
   const [replyTo, setReplyTo] = useState(null);
   const [showEmoji, setShowEmoji] = useState(null);
   const [convDetail, setConvDetail] = useState(null);
-  const [showInfo, setShowInfo] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -55,7 +55,7 @@ export default function ChatPage() {
     API.get('/conversations').then(({ data }) => setConversations(data)).catch(() => {});
   }, [activeConvId]);
 
-  // Fetch messages
+  // Fetch messages + conv detail
   useEffect(() => {
     if (activeConvId) {
       API.get(`/messages/${activeConvId}`).then(({ data }) => {
@@ -63,8 +63,10 @@ export default function ChatPage() {
         scrollToBottom();
       }).catch(() => {});
       API.get(`/conversations/${activeConvId}`).then(({ data }) => setConvDetail(data)).catch(() => {});
+      // Mark as read
       socket?.emit('conversation:read', { conversationId: activeConvId });
-      setShowInfo(false);
+      // Clear local unread count
+      setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, unread_count: 0 } : c));
     }
   }, [activeConvId, socket, scrollToBottom]);
 
@@ -74,17 +76,26 @@ export default function ChatPage() {
 
     socket.on('message:new', (msg) => {
       if (msg.conversation_id === activeConvId) {
-        setMessages(prev => [...prev, msg]);
+        setMessages(prev => {
+          // Deduplicate: check if already exists (optimistic)
+          if (prev.find(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
         scrollToBottom();
       }
       // Update conversation list
-      setConversations(prev => {
-        const existing = prev.find(c => c.id === msg.conversation_id);
-        if (existing) {
-          return prev.map(c => c.id === msg.conversation_id ? { ...c, last_message: msg.content, last_message_at: msg.created_at } : c);
+      setConversations(prev => prev.map(c => {
+        if (c.id === msg.conversation_id) {
+          return { ...c, last_message: msg.content, last_message_at: msg.created_at };
         }
-        return prev;
-      });
+        return c;
+      }));
+      // Sort conversations by last message
+      setConversations(prev => [...prev].sort((a, b) => {
+        const aTime = new Date(a.last_message_at || 0).getTime();
+        const bTime = new Date(b.last_message_at || 0).getTime();
+        return bTime - aTime;
+      }));
     });
 
     socket.on('message:deleted', ({ messageId }) => {
@@ -114,13 +125,36 @@ export default function ChatPage() {
   const sendMessage = (e) => {
     e?.preventDefault();
     if (!text.trim() || !activeConvId) return;
+
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg = {
+      id: tempId,
+      conversation_id: activeConvId,
+      sender_id: user?.id,
+      content: text.trim(),
+      type: 'text',
+      reply_to_id: replyTo?.id || null,
+      is_deleted: false,
+      reactions: [],
+      reply_preview: replyTo ? { id: replyTo.id, content: replyTo.content, sender_id: replyTo.sender_id, is_deleted: false } : null,
+      created_at: new Date().toISOString(),
+      sender_name: user?.name || 'You',
+      sender_avatar: null,
+    };
+
+    // Optimistic update
+    setMessages(prev => [...prev, optimisticMsg]);
+    scrollToBottom();
+
     socket?.emit('message:send', {
       conversationId: activeConvId,
       content: text.trim(),
       type: 'text',
       receiverId: convDetail?.members?.find(m => m.id !== user?.id)?.id,
       replyToId: replyTo?.id || null,
+      tempId,
     });
+
     setText('');
     setReplyTo(null);
     socket?.emit('user:stop-typing', { conversationId: activeConvId });
@@ -135,7 +169,10 @@ export default function ChatPage() {
 
   const handleTyping = (val) => {
     setText(val);
-    socket?.emit('user:typing', { conversationId: activeConvId, receiverId: convDetail?.members?.find(m => m.id !== user?.id)?.id });
+    socket?.emit('user:typing', {
+      conversationId: activeConvId,
+      receiverId: convDetail?.members?.find(m => m.id !== user?.id)?.id
+    });
     clearTimeout(window.typingTimeout);
     window.typingTimeout = setTimeout(() => {
       socket?.emit('user:stop-typing', { conversationId: activeConvId });
@@ -143,14 +180,16 @@ export default function ChatPage() {
   };
 
   const deleteMessage = (msgId) => {
-    if (window.confirm('Thu hồi tin nhắn này?')) {
-      socket?.emit('message:delete', { messageId: msgId, conversationId: activeConvId });
-    }
+    socket?.emit('message:delete', { messageId: msgId, conversationId: activeConvId });
   };
 
   const toggleReaction = (msgId, emoji) => {
     socket?.emit('message:react', { messageId: msgId, conversationId: activeConvId, emoji });
     setShowEmoji(null);
+  };
+
+  const selectConversation = (convId) => {
+    window.location.href = `/chat/${convId}`;
   };
 
   const filteredConv = conversations.filter(c =>
@@ -169,8 +208,8 @@ export default function ChatPage() {
 
   return (
     <div className="h-full flex bg-white">
-      {/* ====== LEFT PANEL: Conversation List ====== */}
-      <div className={`w-80 lg:w-96 border-r border-gray-200 flex flex-col bg-white ${activeConvId ? 'hidden lg:flex' : 'flex'}`}>
+      {/* ====== LEFT PANEL: Conversation List (always visible on desktop) ====== */}
+      <div className="w-72 xl:w-80 border-r border-gray-200 flex flex-col bg-white flex-shrink-0">
         <div className="p-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-xl font-bold text-gray-900">Đoạn chat</h1>
@@ -194,7 +233,7 @@ export default function ChatPage() {
             const isActive = c.id === activeConvId;
             return (
               <button key={c.id}
-                onClick={() => window.location.href = `/chat/${c.id}`}
+                onClick={() => selectConversation(c.id)}
                 className={`w-full flex items-center gap-3 p-3.5 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left ${
                   isActive ? 'bg-primary-50 border-l-4 border-l-primary-500' : ''
                 }`}>
@@ -231,7 +270,7 @@ export default function ChatPage() {
       </div>
 
       {/* ====== CENTER: Chat Detail ====== */}
-      <div className={`flex-1 flex flex-col ${!activeConvId ? 'hidden lg:flex lg:items-center lg:justify-center' : 'flex'}`}>
+      <div className="flex-1 flex flex-col min-w-0">
         {activeConvId ? (
           <>
             {/* Header */}
@@ -253,10 +292,6 @@ export default function ChatPage() {
                   {typing[activeConvId] ? 'Đang nhập...' : otherUser?.is_online === 1 ? 'Đang hoạt động' : otherUser?.last_seen ? `Hoạt động ${formatTime(otherUser.last_seen)} trước` : ''}
                 </div>
               </div>
-              <button onClick={() => setShowInfo(!showInfo)}
-                className={`p-2 rounded-xl transition-colors ${showInfo ? 'bg-primary-50 text-primary-500' : 'hover:bg-gray-100 text-gray-500'}`}>
-                <FiInfo size={20} />
-              </button>
             </div>
 
             {/* Messages */}
@@ -273,6 +308,7 @@ export default function ChatPage() {
                       acc[r.emoji] = (acc[r.emoji] || 0) + 1;
                       return acc;
                     }, {}) || {};
+                    const isTemp = msg.id?.startsWith('temp-');
 
                     return (
                       <div key={msg.id} className={`group flex mb-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
@@ -292,7 +328,7 @@ export default function ChatPage() {
                             isMine
                               ? 'bg-primary-500 text-white rounded-br-md'
                               : 'bg-white text-gray-800 rounded-bl-md shadow-sm'
-                          }`}>
+                          } ${isTemp ? 'opacity-70' : ''}`}>
                             {msg.is_deleted ? (
                               <span className="italic opacity-60">{msg.content}</span>
                             ) : (
@@ -302,12 +338,12 @@ export default function ChatPage() {
                               isMine ? 'text-primary-200 justify-end' : 'text-gray-400 justify-start'
                             }`}>
                               {msg.created_at ? formatTime(msg.created_at) : ''}
-                              {isMine && !msg.is_deleted && <span className="text-[10px]">✓✓</span>}
+                              {isMine && !msg.is_deleted && <span className="text-[10px]">{isTemp ? '○' : '✓✓'}</span>}
                             </div>
 
-                            {/* Actions on hover */}
-                            {!msg.is_deleted && (
-                              <div className={`absolute -top-8 hidden group-hover:flex gap-0.5 bg-white rounded-lg shadow-lg border p-1 ${
+                            {/* Actions on hover (only for non-temp, non-deleted) */}
+                            {!msg.is_deleted && !isTemp && (
+                              <div className={`absolute -top-8 hidden group-hover:flex gap-0.5 bg-white rounded-lg shadow-lg border p-1 z-20 ${
                                 isMine ? 'right-0' : 'left-0'
                               }`}>
                                 <button onClick={() => setReplyTo(msg)}
@@ -376,7 +412,7 @@ export default function ChatPage() {
             {/* Reply preview */}
             {replyTo && (
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
-                <FiReply size={14} className="text-primary-500" />
+                <FiCornerUpLeft size={14} className="text-primary-500" />
                 <div className="flex-1 min-w-0">
                   <span className="text-xs font-medium text-primary-500">Đang trả lời</span>
                   <p className="text-xs text-gray-500 truncate">{replyTo.content}</p>
@@ -414,25 +450,24 @@ export default function ChatPage() {
             </form>
           </>
         ) : (
-          <div className="text-center text-gray-400 px-4">
-            <div className="w-20 h-20 rounded-full bg-primary-50 flex items-center justify-center mx-auto mb-4">
-              <FiMessageCircle size={36} className="text-primary-300" />
+          <div className="h-full flex items-center justify-center text-center text-gray-400 px-4">
+            <div>
+              <div className="w-20 h-20 rounded-full bg-primary-50 flex items-center justify-center mx-auto mb-4">
+                <FiMessageCircle size={36} className="text-primary-300" />
+              </div>
+              <p className="text-lg font-medium text-gray-500">Chọn một đoạn chat</p>
+              <p className="text-sm mt-1">hoặc bắt đầu cuộc trò chuyện mới từ mục Khám phá</p>
             </div>
-            <p className="text-lg font-medium text-gray-500">Chọn một đoạn chat</p>
-            <p className="text-sm mt-1">hoặc bắt đầu cuộc trò chuyện mới từ mục Khám phá</p>
           </div>
         )}
       </div>
 
-      {/* ====== RIGHT PANEL: User Info ====== */}
-      <div className={`${showInfo && activeConvId ? 'w-80 border-l border-gray-200 flex flex-col' : 'hidden lg:hidden'}`}>
+      {/* ====== RIGHT PANEL: User Info (ALWAYS PINNED on desktop) ====== */}
+      <div className={`${activeConvId ? 'w-72 xl:w-80 border-l border-gray-200 flex flex-col flex-shrink-0' : 'hidden'}`}>
         {otherUser && (
           <>
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="p-4 border-b border-gray-100">
               <h3 className="font-semibold text-gray-900 text-sm">Thông tin</h3>
-              <button onClick={() => setShowInfo(false)} className="p-1 hover:bg-gray-100 rounded-lg">
-                <FiX size={18} className="text-gray-400" />
-              </button>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="text-center mb-6">
@@ -451,7 +486,7 @@ export default function ChatPage() {
               </div>
 
               <div className="space-y-4">
-                <div className="card p-4">
+                <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <FiUser size={18} className="text-gray-400" />
                     <div>
@@ -461,12 +496,12 @@ export default function ChatPage() {
                   </div>
                 </div>
                 {otherUser.bio && (
-                  <div className="card p-4">
+                  <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
                     <p className="text-xs text-gray-400 mb-1">Giới thiệu</p>
                     <p className="text-sm text-gray-700">{otherUser.bio}</p>
                   </div>
                 )}
-                <div className="card p-4">
+                <div className="bg-white rounded-2xl border border-gray-100 p-4 shadow-sm">
                   <div className="flex items-center gap-3 text-sm text-gray-600">
                     <FiClock size={18} className="text-gray-400" />
                     <div>
@@ -480,10 +515,10 @@ export default function ChatPage() {
               </div>
 
               <div className="mt-6 flex gap-3">
-                <button className="flex-1 btn-outline text-sm py-2.5 flex items-center justify-center gap-2">
+                <button className="flex-1 border-2 border-primary-500 text-primary-500 hover:bg-primary-50 font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
                   <FiPhone size={16} /> Gọi
                 </button>
-                <button className="flex-1 btn-outline text-sm py-2.5 flex items-center justify-center gap-2">
+                <button className="flex-1 border-2 border-primary-500 text-primary-500 hover:bg-primary-50 font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm">
                   <FiMapPin size={16} /> Vị trí
                 </button>
               </div>
