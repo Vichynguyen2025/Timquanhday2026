@@ -272,7 +272,16 @@ export default function FeedScreen() {
   // ─── Comment ────────────────────────────────────
   function openComments(post) {
     setCommentPost(post); setCommentText(""); setReplyTo(null); setCommentLoading(true); setCommentError(null);
-    api.get("/posts/" + post.id + "/comments").then((res) => { setComments(res.data || []); })
+    api.get("/posts/" + post.id + "/comments").then((res) => {
+      const flat = res.data || [];
+      // Sort: Level 1 first (by time), then Level 2 under their parent, then Level 3
+      const l1 = flat.filter(c => c.parent_id == null).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      const l1Ids = new Set(l1.map(c => c.id));
+      const l2 = flat.filter(c => c.parent_id && l1Ids.has(c.parent_id)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      const l2Ids = new Set(l2.map(c => c.id));
+      const l3 = flat.filter(c => c.parent_id && l2Ids.has(c.parent_id)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      setComments([...l1, ...l2, ...l3]);
+    })
       .catch(() => { setCommentError("Không thể tải bình luận"); setComments([]); })
       .finally(() => setCommentLoading(false));
   }
@@ -284,7 +293,16 @@ export default function FeedScreen() {
     const parentId = replyTo?.id || null;
     const payload = { content: text };
     if (parentId) payload.parent_id = parentId;
-    setComments(prev => [...prev, { id: tempId, content: text, user_name: "Bạn", is_temp: true, created_at: new Date().toISOString(), parent_id: parentId }]);
+    // Insert at correct tree position
+    setComments(prev => {
+      const flat = [ ...prev, { id: tempId, content: text, user_name: "Bạn", is_temp: true, created_at: new Date().toISOString(), parent_id: parentId }];
+      const l1 = flat.filter(c => c.parent_id == null).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      const l1Ids = new Set(l1.map(c => c.id));
+      const l2 = flat.filter(c => c.parent_id && l1Ids.has(c.parent_id)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      const l2Ids = new Set(l2.map(c => c.id));
+      const l3 = flat.filter(c => c.parent_id && l2Ids.has(c.parent_id)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+      return [...l1, ...l2, ...l3];
+    });
     api.post("/posts/" + commentPost.id + "/comments", payload)
       .then((res) => {
         setComments(prev => prev.map(c => c.id === tempId ? { ...res.data, is_temp: false } : c));
@@ -544,20 +562,34 @@ export default function FeedScreen() {
                   </View>
                 }
                 renderItem={({ item }) => {
-                  const isReply = !!item.parent_id;
+                  // Build 3-level tree from flat comments
+                  // Level 1 = no parent_id, Level 2 = replies to Level 1, Level 3 = replies to Level 2
+                  const l1 = item.parent_id == null;
+                  const flat = comments || [];
+                  const l1Ids = new Set(flat.filter(c => c.parent_id == null).map(c => c.id));
+                  const l2Ids = new Set(flat.filter(c => c.parent_id && l1Ids.has(c.parent_id)).map(c => c.id));
+                  const level = l1 ? 1 : (l2Ids.has(item.parent_id) ? 2 : (l1Ids.has(item.parent_id) ? 2 : 3));
+                  const indent = level === 1 ? 0 : level === 2 ? 36 : 60;
+                  const avatarSize = level === 1 ? 32 : level === 2 ? 26 : 22;
+                  const fontSize = level === 1 ? 14 : 13;
+                  const bubblePad = level === 1 ? 10 : 8;
+                  const marginBottom = level === 1 ? 14 : 8;
+                  const isReply = level > 1;
                   return (
-                    <View style={[styles.commentItem, isReply && { marginLeft: 40 }]}>
-                      <View style={styles.commentAvatar}><Text style={styles.commentAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text></View>
+                    <View style={[styles.commentItem, { marginLeft: indent, marginBottom }]}>
+                      <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }]}>
+                        <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+                      </View>
                       <View style={{ flex: 1 }}>
-                        <View style={styles.commentBubble}>
+                        <View style={[styles.commentBubble, { padding: bubblePad }]}>
                           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                            <Text style={styles.commentName}>{item.user_name || "Người dùng"}</Text>
+                            <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{item.user_name || "Người dùng"}</Text>
                             <Text style={styles.commentTime}>{formatTime(item.created_at)}</Text>
                           </View>
-                          <Text style={styles.commentContent}>{item.content}</Text>
+                          <Text style={[styles.commentContent, { fontSize }]}>{item.content}</Text>
                         </View>
-                        {/* Comment actions: Like + Reply */}
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4, paddingHorizontal: 4 }}>
+                        {/* Actions */}
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 3, paddingHorizontal: 4 }}>
                           <Text style={styles.commentActionText}>❤️ 0</Text>
                           <TouchableOpacity onPress={() => { setReplyTo({ id: item.id, name: item.user_name || "Người dùng" }); commentInputRef.current?.focus(); }}>
                             <Text style={styles.commentActionText}>Trả lời</Text>
