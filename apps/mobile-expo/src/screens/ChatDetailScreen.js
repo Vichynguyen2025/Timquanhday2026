@@ -3,7 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Keyboard
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import api from "../services/api";
-import { getSocket, connectSocket } from "../services/socket";
+import { getSocket } from "../services/socket";
+import { useAuth } from "../contexts/AuthContext";
 import { colors } from "../theme/colors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -13,44 +14,60 @@ const EMOJIS = ["👍", "❤️", "🔥", "😂", "😍", "🎉", "💯", "✨",
 
 export default function ChatDetailScreen({ route, navigation }) {
   const { conversationId, name } = route.params;
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [typing, setTyping] = useState(false);
-  const [replyTo, setReplyTo] = useState(null);
   const [showEmoji, setShowEmoji] = useState(null);
   const flatListRef = useRef(null);
 
+  // Find receiver from conversation member (not self)
+  const [receiverId, setReceiverId] = useState(null);
+
   useEffect(() => {
     fetchMessages();
-    const socket = getSocket();
-    if (!socket) return;
-    socket.emit("conversation:join", { conversationId });
-    socket.emit("conversation:read", { conversationId });
+    // Get receiver info
+    api.get("/conversations/" + conversationId).then((res) => {
+      const members = res.data?.members || [];
+      const other = members.find((m) => m.id !== user?.id);
+      if (other) setReceiverId(other.id);
+    }).catch(() => {});
 
-    const onMsg = (msg) => {
-      if (msg.conversation_id === conversationId && msg.sender_id !== user?.id) {
-        setMessages((prev) => (prev.find((m) => m.id === msg.id) ? prev : [...prev, msg]));
-      }
-    };
-    const onDel = ({ messageId }) => setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, is_deleted: true, content: "Tin nhắn đã được thu hồi" } : m));
-    const onReact = ({ messageId, reactions }) => setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, reactions } : m));
-    const onType = ({ conversationId: cId }) => { if (cId === conversationId) setTyping(true); };
-    const onStop = ({ conversationId: cId }) => { if (cId === conversationId) setTyping(false); };
-    socket.on("message:new", onMsg);
-    socket.on("message:deleted", onDel);
-    socket.on("message:reaction", onReact);
-    socket.on("user:typing", onType);
-    socket.on("user:stop-typing", onStop);
-    return () => {
-      socket.off("message:new", onMsg);
-      socket.off("message:deleted", onDel);
-      socket.off("message:reaction", onReact);
-      socket.off("user:typing", onType);
-      socket.off("user:stop-typing", onStop);
-      socket.emit("conversation:leave", { conversationId });
-    };
-  }, [conversationId]);
+    const socket = getSocket();
+    if (socket) {
+      socket.emit("conversation:join", { conversationId });
+      socket.emit("conversation:read", { conversationId });
+
+      const onMsg = (msg) => {
+        if (msg.conversation_id === conversationId) {
+          setMessages((prev) => {
+            if (prev.find((m) => m.id === msg.id || m.client_temp_id === msg.client_temp_id)) return prev;
+            return [...prev, msg];
+          });
+        }
+      };
+      const onDel = ({ messageId }) => setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, is_deleted: true, content: "Tin nhắn đã được thu hồi" } : m));
+      const onReact = ({ messageId, reactions }) => setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, reactions } : m));
+      const onType = ({ conversationId: cId }) => { if (cId === conversationId) setTyping(true); };
+      const onStop = ({ conversationId: cId }) => { if (cId === conversationId) setTyping(false); };
+
+      socket.on("message:new", onMsg);
+      socket.on("message:deleted", onDel);
+      socket.on("message:reaction", onReact);
+      socket.on("user:typing", onType);
+      socket.on("user:stop-typing", onStop);
+
+      return () => {
+        socket.off("message:new", onMsg);
+        socket.off("message:deleted", onDel);
+        socket.off("message:reaction", onReact);
+        socket.off("user:typing", onType);
+        socket.off("user:stop-typing", onStop);
+        socket.emit("conversation:leave", { conversationId });
+      };
+    }
+  }, [conversationId, user?.id]);
 
   async function fetchMessages() {
     try {
@@ -60,14 +77,40 @@ export default function ChatDetailScreen({ route, navigation }) {
     setLoading(false);
   }
 
-  async function sendMessage() {
-    if (!text.trim()) return;
-    const tempId = "temp_" + Date.now();
-    const msg = { id: tempId, conversation_id: conversationId, sender_id: "me", content: text.trim(), type: "text", created_at: new Date().toISOString(), status: "sending" };
-    setMessages((prev) => [...prev, msg]);
+  function sendMessage() {
+    if (!text.trim() || !user?.id) return;
+    const tempId = "temp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    const optimisticMsg = {
+      id: tempId, conversation_id: conversationId, sender_id: user.id,
+      content: text.trim(), type: "text", created_at: new Date().toISOString(),
+      status: "sending", client_temp_id: tempId, sender_name: user.name,
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
     setText("");
     const socket = getSocket();
-    if (socket) socket.emit("message:send", { conversationId, content: text.trim(), type: "text", tempId });
+    if (socket) {
+      socket.emit("message:send", {
+        conversationId, content: text.trim(), type: "text", receiverId, tempId,
+      }, (response) => {
+        if (response?.success && response?.message) {
+          // ACK: replace temp with real message
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === tempId || m.client_temp_id === tempId);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = { ...response.message, id: response.messageId, client_temp_id: tempId, status: "sent" };
+              return next;
+            }
+            return prev;
+          });
+        } else if (response?.success) {
+          // ACK without full message: update status only
+          setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: response.messageId, status: "sent" } : m));
+        } else {
+          setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
+        }
+      });
+    }
   }
 
   async function pickImage() {
@@ -84,7 +127,19 @@ export default function ChatDetailScreen({ route, navigation }) {
     });
     const data = await res.json();
     const socket = getSocket();
-    if (socket) socket.emit("message:send", { conversationId, content: "", type: "image", attachmentUrl: data.url });
+    if (socket) {
+      socket.emit("message:send", {
+        conversationId, content: "", type: "image", receiverId,
+        attachmentUrl: data.url, attachmentName: data.filename, tempId: "img_" + Date.now(),
+      });
+    }
+  }
+
+  function handleTyping(val) {
+    setText(val);
+    if (!receiverId) return;
+    const socket = getSocket();
+    if (socket) socket.emit("typing:start", { conversationId, receiverId });
   }
 
   function formatTime(d) {
@@ -105,13 +160,22 @@ export default function ChatDetailScreen({ route, navigation }) {
           contentContainerStyle={{ paddingBottom: 8 }}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           renderItem={({ item }) => {
-            const isMine = item.sender_id === "me" || item.sender_id === "u-demo-1";
+            const isMine = item.sender_id === user?.id;
             const isImage = item.type === "image";
-            const attUrl = item.metadata?.attachmentUrl;
+            const attUrl = item.metadata?.attachmentUrl || item.attachmentUrl;
             const reactions = item.reactions || [];
+            const isFailed = item.status === "failed";
+            const isSending = item.status === "sending" || item.id?.startsWith("temp_");
+
             return (
               <View style={[styles.msgRow, isMine ? styles.msgMine : styles.msgOther]}>
-                <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+                <View style={[
+                  styles.bubble,
+                  isMine ? styles.bubbleMine : styles.bubbleOther,
+                  isImage ? { backgroundColor: "transparent", padding: 0 } : {},
+                  isSending ? { opacity: 0.7 } : {},
+                  isFailed ? { borderWidth: 2, borderColor: colors.error } : {},
+                ]}>
                   {item.is_deleted ? (
                     <Text style={[styles.msgText, isMine && styles.msgTextMine, { fontStyle: "italic" }]}>{item.content}</Text>
                   ) : isImage && attUrl ? (
@@ -119,11 +183,26 @@ export default function ChatDetailScreen({ route, navigation }) {
                   ) : (
                     <Text style={[styles.msgText, isMine && styles.msgTextMine]}>{item.content}</Text>
                   )}
-                  <Text style={[styles.time, isMine && styles.timeMine]}>{formatTime(item.created_at)}</Text>
+                  <View style={[styles.timeRow, isMine ? styles.timeRowMine : styles.timeRowOther]}>
+                    <Text style={[styles.time, isMine && styles.timeMine]}>{formatTime(item.created_at)}</Text>
+                    {isMine && !item.is_deleted && (
+                      <Text style={[styles.status, isMine && styles.statusMine]}>
+                        {item.status === "failed" ? "⚠ Lỗi" : isSending ? "•" : "✓✓"}
+                      </Text>
+                    )}
+                  </View>
                   {reactions.length > 0 && (
                     <View style={styles.reactions}>
-                      {reactions.map((r, i) => <Text key={i}>{r.emoji}</Text>)}
+                      {reactions.map((r, i) => <Text key={i} style={{ fontSize: 14 }}>{r.emoji}</Text>)}
                     </View>
+                  )}
+                  {isFailed && (
+                    <TouchableOpacity onPress={() => {
+                      setMessages((prev) => prev.filter((m) => m.id !== item.id));
+                      setText(item.content);
+                    }}>
+                      <Text style={styles.retry}>Thử lại</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
               </View>
@@ -135,7 +214,7 @@ export default function ChatDetailScreen({ route, navigation }) {
       <View style={styles.inputBar}>
         <TouchableOpacity onPress={pickImage} style={styles.inputBtn}><Ionicons name="image-outline" size={24} color={colors.textSecondary} /></TouchableOpacity>
         <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)} style={styles.inputBtn}><Ionicons name="happy-outline" size={24} color={colors.textSecondary} /></TouchableOpacity>
-        <TextInput style={styles.input} placeholder="Nhập tin nhắn..." value={text} onChangeText={setText} multiline />
+        <TextInput style={styles.input} placeholder="Nhập tin nhắn..." value={text} onChangeText={handleTyping} multiline />
         <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}><Ionicons name="send" size={20} color="#fff" /></TouchableOpacity>
       </View>
       {showEmoji && (
@@ -160,10 +239,16 @@ const styles = StyleSheet.create({
   bubbleOther: { backgroundColor: colors.bubbleOther, borderBottomLeftRadius: 4 },
   msgText: { fontSize: 15, color: colors.text },
   msgTextMine: { color: "#fff" },
-  time: { fontSize: 10, color: colors.textTertiary, marginTop: 4, textAlign: "right" },
+  timeRow: { flexDirection: "row", alignItems: "center", marginTop: 4 },
+  timeRowMine: { justifyContent: "flex-end" },
+  timeRowOther: { justifyContent: "flex-start" },
+  time: { fontSize: 10, color: colors.textTertiary },
   timeMine: { color: "rgba(255,255,255,0.7)" },
+  status: { fontSize: 10, marginLeft: 4 },
+  statusMine: { color: "rgba(255,255,255,0.7)" },
   image: { width: 200, height: 200, borderRadius: 12 },
   reactions: { flexDirection: "row", marginTop: 4 },
+  retry: { fontSize: 11, color: colors.error, fontWeight: "600", marginTop: 4 },
   typing: { paddingHorizontal: 16, paddingVertical: 4, fontSize: 12, fontStyle: "italic", color: colors.textTertiary },
   inputBar: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border },
   inputBtn: { padding: 8 },

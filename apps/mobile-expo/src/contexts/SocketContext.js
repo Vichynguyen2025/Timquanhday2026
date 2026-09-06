@@ -1,20 +1,24 @@
-import React, { createContext, useContext, useEffect, useRef } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 import { connectSocket, disconnectSocket, getSocket } from "../services/socket";
 import { useAuth } from "./AuthContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
-  const { user } = useAuth();
-  const socketRef = useRef(null);
+  const { user, loading } = useAuth();
 
+  // Auto-connect socket when user is logged in
   useEffect(() => {
-    if (!user) { disconnectSocket(); return; }
+    if (!user || loading) {
+      disconnectSocket();
+      return;
+    }
     AsyncStorage.getItem("accessToken").then((token) => {
-      if (token) socketRef.current = connectSocket(token);
+      if (token) connectSocket(token);
     });
     return () => disconnectSocket();
-  }, [user]);
+  }, [user, isLoggedIn]);
 
   return <SocketContext.Provider value={{ socket: getSocket() }}>{children}</SocketContext.Provider>;
 }
