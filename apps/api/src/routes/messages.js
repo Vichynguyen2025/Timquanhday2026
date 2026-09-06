@@ -76,7 +76,25 @@ router.delete('/:id', authenticate, async (req, res) => {
     const msg = await query('SELECT * FROM messages WHERE id = ? AND sender_id = ?', [req.params.id, req.user.id]);
     if (!msg.length) return res.status(404).json({ error: 'Message not found or unauthorized' });
     await query('UPDATE messages SET is_deleted = TRUE, content = "Tin nhắn đã được thu hồi" WHERE id = ?', [req.params.id]);
-    res.json({ success: true });
+    res.json({ success: true, messageId: req.params.id });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Batch delete messages
+router.post('/batch-delete', authenticate, async (req, res) => {
+  try {
+    const { messageIds } = req.body;
+    if (!messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
+      return res.status(400).json({ error: 'messageIds required' });
+    }
+    const placeholders = messageIds.map(() => '?').join(',');
+    const result = await query(
+      `UPDATE messages SET is_deleted = TRUE, content = "Tin nhắn đã được thu hồi" WHERE id IN (${placeholders}) AND sender_id = ?`,
+      [...messageIds, req.user.id]
+    );
+    res.json({ success: true, affected: result.affectedRows });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }

@@ -44,6 +44,22 @@ export function setupSocket(io) {
           return ackFn({ success: false, error: 'Missing required fields', tempId });
         }
 
+        // Check block status before sending
+        if (receiverId) {
+          const blocked = await query(
+            'SELECT * FROM user_blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)',
+            [userId, receiverId, receiverId, userId]
+          );
+          if (blocked.length > 0) {
+            return ackFn({
+              success: false,
+              code: 'USER_BLOCKED',
+              message: 'Không thể gửi tin nhắn vì người dùng đã bị chặn.',
+              tempId,
+            });
+          }
+        }
+
         // Dedup: check if already processed (retry safety)
         if (tempId) {
           const existing = await query(

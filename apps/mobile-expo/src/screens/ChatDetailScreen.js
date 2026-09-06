@@ -136,6 +136,9 @@ export default function ChatDetailScreen({ route, navigation }) {
           });
         } else if (response?.success) {
           setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: response.messageId, status: "sent" } : m));
+        } else if (response?.code === "USER_BLOCKED") {
+          setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed", error: response.message } : m));
+          Alert.alert("Bị chặn", response.message);
         } else {
           setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
         }
@@ -442,8 +445,28 @@ export default function ChatDetailScreen({ route, navigation }) {
           <Text style={styles.headerName} numberOfLines={1}>{otherUser?.name || name || "Đoạn chat"}</Text>
           <Text style={[styles.headerStatus, isOnline && { color: colors.online }]}>{statusText}</Text>
         </View>
-        <TouchableOpacity onPress={() => setShowInfo(true)} style={styles.headerBtn}>
-          <Ionicons name="information-circle-outline" size={26} color={colors.primary} />
+        <TouchableOpacity onPress={() => {
+          Alert.alert("Tuỳ chọn", "", [
+            { text: "Thông tin", onPress: () => setShowInfo(true) },
+            { text: "Xóa cuộc trò chuyện", style: "destructive", onPress: () => {
+              Alert.alert("Xóa cuộc trò chuyện", "Toàn bộ lịch sử sẽ bị xóa khỏi danh sách của bạn.", [
+                { text: "Huỷ", style: "cancel" },
+                { text: "Xóa", style: "destructive", onPress: async () => {
+                  try { await api.delete("/conversations/" + conversationId);
+                    navigation.goBack();
+                  } catch (e) {}
+                }},
+              ]);
+            }},
+            { text: "Chặn người dùng", style: "destructive", onPress: async () => {
+              try { await api.post("/users/" + receiverId + "/block");
+                Alert.alert("Đã chặn", "Người dùng đã bị chặn.");
+              } catch (e) {}
+            }},
+            { text: "Huỷ", style: "cancel" },
+          ]);
+        }} style={styles.headerBtn}>
+          <Ionicons name="ellipsis-horizontal" size={24} color={colors.primary} />
         </TouchableOpacity>
       </View>
 

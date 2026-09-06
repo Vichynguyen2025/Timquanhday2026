@@ -6,7 +6,7 @@ import API from '../services/api';
 import {
   FiSend, FiSearch, FiArrowLeft, FiPaperclip, FiMessageCircle,
   FiTrash2, FiSmile, FiCornerUpLeft, FiX, FiUser, FiClock, FiPhone, FiMapPin,
-  FiAlertCircle, FiImage, FiFile, FiCheck, FiCheckCircle
+  FiAlertCircle, FiImage, FiFile, FiCheck, FiCheckCircle, FiMoreVertical
 } from 'react-icons/fi';
 
 // ─── Modern tech-style emoji set ────────────────
@@ -147,6 +147,7 @@ export default function ChatPage() {
   const [lightboxUrl, setLightboxUrl] = useState(null);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [docName, setDocName] = useState(null);
+  const [blockStatus, setBlockStatus] = useState(null); // null, 'blocked_by_me', 'blocked_by_them'
 
   // ─── Refs ─────────────────────────────────────
   const messagesEndRef = useRef(null);
@@ -363,6 +364,13 @@ export default function ChatPage() {
           messagesCacheRef.current.set(activeConvId, updated);
           return updated;
         });
+      } else if (response?.code === 'USER_BLOCKED') {
+        setMessages(prev => {
+          const updated = prev.map(m => m.id === tempId ? { ...m, status: 'failed', error: response.message } : m);
+          messagesCacheRef.current.set(activeConvId, updated);
+          return updated;
+        });
+        alert(response.message);
       } else {
         setMessages(prev => {
           const updated = prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m);
@@ -517,6 +525,40 @@ export default function ChatPage() {
     }
   };
 
+  // ─── Block/Unblock ──────────────────────────────
+  const checkBlockStatus = useCallback(async () => {
+    if (!otherUser?.id) return;
+    try {
+      const { data } = await API.get(`/users/${otherUser.id}/block-status`);
+      setBlockStatus(data.isBlocked ? (data.blockedBy === 'me' ? 'blocked_by_me' : 'blocked_by_them') : null);
+    } catch {}
+  }, [otherUser?.id]);
+
+  useEffect(() => { checkBlockStatus(); }, [checkBlockStatus]);
+
+  const toggleBlock = async () => {
+    if (!otherUser?.id) return;
+    try {
+      if (blockStatus === 'blocked_by_me') {
+        await API.post(`/users/${otherUser.id}/unblock`);
+        setBlockStatus(null);
+      } else {
+        await API.post(`/users/${otherUser.id}/block`);
+        setBlockStatus('blocked_by_me');
+      }
+    } catch {}
+  };
+
+  const deleteConversation = async () => {
+    if (!activeConvId) return;
+    if (!window.confirm('Xóa cuộc trò chuyện? Toàn bộ lịch sử sẽ bị xóa khỏi danh sách của bạn.')) return;
+    try {
+      await API.delete(`/conversations/${activeConvId}`);
+      setConversations(prev => prev.filter(c => c.id !== activeConvId));
+      navigate('/chat');
+    } catch {}
+  };
+
   const filteredConv = conversations.filter(c =>
     c.display_name?.toLowerCase().includes(search.toLowerCase())
   );
@@ -603,6 +645,17 @@ export default function ChatPage() {
                 <div className="font-semibold text-gray-900 text-sm truncate">{otherUser?.name || 'Đoạn chat'}</div>
                 <div className="text-xs text-gray-500">
                   {typing[activeConvId] ? 'Đang nhập...' : otherUser?.is_online === 1 ? 'Đang hoạt động' : otherUser?.last_seen ? `Hoạt động ${formatTime(otherUser.last_seen)} trước` : ''}
+                </div>
+              </div>
+              <div className="relative group">
+                <button className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-500"><FiMoreVertical size={18} /></button>
+                <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-gray-200 py-1 min-w-[180px] hidden group-hover:block z-30">
+                  <button onClick={deleteConversation} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                    <FiTrash2 size={15} className="text-gray-400" /> Xóa cuộc trò chuyện
+                  </button>
+                  <button onClick={toggleBlock} className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2">
+                    <FiX size={15} /> {blockStatus === 'blocked_by_me' ? 'Bỏ chặn' : 'Chặn người dùng'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -820,6 +873,18 @@ export default function ChatPage() {
                 </button>
               </div>
             </form>
+
+            {/* Blocked state message */}
+            {blockStatus && (
+              <div className="px-4 py-3 bg-red-50 border-t border-red-100 text-center">
+                <p className="text-sm text-red-600 font-medium">
+                  {blockStatus === 'blocked_by_me' ? 'Bạn đã chặn người dùng này.' : 'Bạn không thể nhắn tin cho người dùng này.'}
+                </p>
+                {blockStatus === 'blocked_by_me' && (
+                  <button onClick={toggleBlock} className="text-xs text-primary-600 mt-1 hover:underline">Bỏ chặn</button>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <div className="h-full flex items-center justify-center text-center text-gray-400 px-4">

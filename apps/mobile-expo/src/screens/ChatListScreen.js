@@ -114,6 +114,21 @@ export default function ChatListScreen({ navigation }) {
               style={styles.convItem}
               activeOpacity={0.7}
               onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.display_name })}
+              onLongPress={() => {
+                Alert.alert("Tuỳ chọn", "", [
+                  { text: "Xóa cuộc trò chuyện", style: "destructive", onPress: () => {
+                    Alert.alert("Xóa", "Xóa cuộc trò chuyện này?", [
+                      { text: "Huỷ", style: "cancel" },
+                      { text: "Xóa", style: "destructive", onPress: async () => {
+                        try { await api.delete("/conversations/" + item.id);
+                          setConversations((prev) => prev.filter((c) => c.id !== item.id));
+                        } catch (e) {}
+                      }},
+                    ]);
+                  }},
+                  { text: "Huỷ", style: "cancel" },
+                ]);
+              }}
             >
               <View style={styles.avatarWrap}>
                 <View style={styles.avatar}>

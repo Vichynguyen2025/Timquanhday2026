@@ -14,7 +14,7 @@ router.get('/', authenticate, async (req, res) => {
         (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at,
         (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ?) as unread_count
       FROM conversations c
-      JOIN conversation_members cm ON c.id = cm.conversation_id AND cm.user_id = ?
+      JOIN conversation_members cm ON c.id = cm.conversation_id AND cm.user_id = ? AND cm.deleted_at IS NULL
       ORDER BY COALESCE(last_message_at, c.created_at) DESC`, [req.user.id, req.user.id]
     );
 
@@ -85,6 +85,19 @@ router.post('/', authenticate, async (req, res) => {
       [convId, req.user.id, convId, targetUserId]);
     res.json({ id: convId });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete conversation (for current user only)
+router.delete('/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Soft delete: mark conversation_members.deleted_at for current user
+    await query('UPDATE conversation_members SET deleted_at = NOW() WHERE conversation_id = ? AND user_id = ?', [id, req.user.id]);
+    res.json({ success: true, conversationId: id });
+  } catch (err) {
+    console.error('[Conversations] Delete error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
