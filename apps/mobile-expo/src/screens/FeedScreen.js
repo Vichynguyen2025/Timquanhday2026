@@ -176,6 +176,7 @@ export default function FeedScreen() {
   const [commentText, setCommentText] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
   const [commentError, setCommentError] = useState(null);
+  const [replyTo, setReplyTo] = useState(null); // { id, name } for reply context
   // Create post
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [postContent, setPostContent] = useState("");
@@ -270,7 +271,7 @@ export default function FeedScreen() {
 
   // ─── Comment ────────────────────────────────────
   function openComments(post) {
-    setCommentPost(post); setCommentText(""); setCommentLoading(true); setCommentError(null);
+    setCommentPost(post); setCommentText(""); setReplyTo(null); setCommentLoading(true); setCommentError(null);
     api.get("/posts/" + post.id + "/comments").then((res) => { setComments(res.data || []); })
       .catch(() => { setCommentError("Không thể tải bình luận"); setComments([]); })
       .finally(() => setCommentLoading(false));
@@ -280,11 +281,19 @@ export default function FeedScreen() {
     if (!commentText.trim() || !commentPost) return;
     const text = commentText.trim(); setCommentText("");
     const tempId = "temp_" + Date.now();
-    setComments(prev => [...prev, { id: tempId, content: text, user_name: "Bạn", is_temp: true, created_at: new Date().toISOString() }]);
-    api.post("/posts/" + commentPost.id + "/comments", { content: text })
-      .then((res) => { setComments(prev => prev.map(c => c.id === tempId ? { ...res.data, is_temp: false } : c)); })
+    const parentId = replyTo?.id || null;
+    const payload = { content: text };
+    if (parentId) payload.parent_id = parentId;
+    setComments(prev => [...prev, { id: tempId, content: text, user_name: "Bạn", is_temp: true, created_at: new Date().toISOString(), parent_id: parentId }]);
+    api.post("/posts/" + commentPost.id + "/comments", payload)
+      .then((res) => {
+        setComments(prev => prev.map(c => c.id === tempId ? { ...res.data, is_temp: false } : c));
+        setReplyTo(null);
+      })
       .catch(() => { setComments(prev => prev.filter(c => c.id !== tempId)); setCommentText(text); Alert.alert("Lỗi", "Không thể gửi bình luận"); });
   }
+
+  function cancelReply() { setReplyTo(null); setCommentText(""); }
 
   function deleteComment(commentId) {
     Alert.alert("Xóa bình luận", "Xác nhận xóa?", [
@@ -539,28 +548,43 @@ export default function FeedScreen() {
                   return (
                     <View style={[styles.commentItem, isReply && { marginLeft: 40 }]}>
                       <View style={styles.commentAvatar}><Text style={styles.commentAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text></View>
-                      <View style={styles.commentBubble}>
-                        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                          <Text style={styles.commentName}>{item.user_name || "Người dùng"}</Text>
-                          <Text style={styles.commentTime}>{formatTime(item.created_at)}</Text>
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.commentBubble}>
+                          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+                            <Text style={styles.commentName}>{item.user_name || "Người dùng"}</Text>
+                            <Text style={styles.commentTime}>{formatTime(item.created_at)}</Text>
+                          </View>
+                          <Text style={styles.commentContent}>{item.content}</Text>
                         </View>
-                        <Text style={styles.commentContent}>{item.content}</Text>
+                        {/* Comment actions: Like + Reply */}
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 4, paddingHorizontal: 4 }}>
+                          <Text style={styles.commentActionText}>❤️ 0</Text>
+                          <TouchableOpacity onPress={() => { setReplyTo({ id: item.id, name: item.user_name || "Người dùng" }); commentInputRef.current?.focus(); }}>
+                            <Text style={styles.commentActionText}>Trả lời</Text>
+                          </TouchableOpacity>
+                          {item.user_name === "Bạn" && !item.is_temp && (
+                            <TouchableOpacity onPress={() => deleteComment(item.id)}>
+                              <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
-                      {item.user_name === "Bạn" && !item.is_temp && (
-                        <TouchableOpacity onPress={() => deleteComment(item.id)} style={{ padding: 4 }}>
-                          <Ionicons name="trash-outline" size={16} color="#EF4444" />
-                        </TouchableOpacity>
-                      )}
                     </View>
                   );
                 }}
               />
             )}
+            {replyTo && (
+              <View style={styles.replyIndicator}>
+                <Text style={styles.replyIndicatorText}>Đang trả lời <Text style={{ fontWeight: "700" }}>{replyTo.name}</Text></Text>
+                <TouchableOpacity onPress={cancelReply}><Ionicons name="close" size={18} color="#6B7280" /></TouchableOpacity>
+              </View>
+            )}
             <View style={[styles.commentInputBar, { paddingBottom: insets.bottom + 8 }]}>
               <TextInput
                 ref={commentInputRef}
                 style={styles.commentInput}
-                placeholder="Viết bình luận..."
+                placeholder={replyTo ? "Viết trả lời..." : "Viết bình luận..."}
                 placeholderTextColor="#8A8D91"
                 value={commentText}
                 onChangeText={setCommentText}
@@ -679,9 +703,12 @@ const styles = StyleSheet.create({
   commentName: { fontSize: 13, fontWeight: "600", color: "#000" },
   commentTime: { fontSize: 10, color: "#8A8D91", marginLeft: 8 },
   commentContent: { fontSize: 14, color: "#333", lineHeight: 18 },
+  commentActionText: { fontSize: 12, color: "#65676B", fontWeight: "500" },
   commentInputBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", backgroundColor: "#fff" },
   commentInput: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 80, fontSize: 14, color: "#000" },
   commentSend: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginLeft: 8 },
+  replyIndicator: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 6, backgroundColor: "#F0F9FF", borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
+  replyIndicatorText: { fontSize: 12, color: "#6B7280" },
   // Create post
   createInput: { backgroundColor: "#F0F2F5", borderRadius: 12, padding: 16, fontSize: 15, color: "#000", minHeight: 120, textAlignVertical: "top" },
   createImageBtn: { flexDirection: "row", alignItems: "center", marginTop: 16, padding: 12, borderRadius: 10, backgroundColor: "#F0F2F5" },

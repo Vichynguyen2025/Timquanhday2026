@@ -126,8 +126,9 @@ function SOSCard({ item, onRespond, onPress, isOwner }) {
         {item.response_count > 0 && <><Text style={styles.cardSep}>·</Text><Text style={styles.cardSub}>{item.response_count} phản hồi</Text></>}
 
         {mediaItems.length > 0 && (
-          <TouchableOpacity onPress={() => { setViewerIdx(0); setViewerVisible(true); }} style={{ marginLeft: "auto" }}>
-            <Ionicons name="images-outline" size={16} color="#6B7280" />
+          <TouchableOpacity onPress={() => { setViewerIdx(0); setViewerVisible(true); }} style={styles.viewPhotoBtn}>
+            <Ionicons name="images-outline" size={14} color="#fff" />
+            <Text style={styles.viewPhotoText}>Xem ảnh{mediaItems.length > 1 ? ` (${mediaItems.length})` : ""}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -591,6 +592,8 @@ const styles = StyleSheet.create({
   respondBtn: { backgroundColor: colors.primary, paddingVertical: 10, borderRadius: 10, alignItems: "center", marginTop: 8 },
   respondText: { color: "#fff", fontWeight: "700", fontSize: 13, letterSpacing: 0.5 },
   respondedText: { fontSize: 12, color: "#22C55E", fontWeight: "600", textAlign: "center", paddingVertical: 6, marginTop: 6 },
+  viewPhotoBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#6B7280", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, gap: 4, marginLeft: "auto" },
+  viewPhotoText: { fontSize: 12, color: "#fff", fontWeight: "600" },
   retryBtn: { marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.primary },
   retryText: { color: "#fff", fontWeight: "600", fontSize: 13 },
   helperSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "80%" },
