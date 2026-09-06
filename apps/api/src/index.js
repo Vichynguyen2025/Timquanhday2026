@@ -13,7 +13,7 @@ import messageRoutes from './routes/messages.js';
 import locationRoutes from './routes/location.js';
 import notificationRoutes from './routes/notifications.js';
 import uploadRoutes from './routes/upload.js';
-import postRoutes from './routes/posts.js';
+import postRoutes, { setSocketIO } from './routes/posts.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -54,6 +54,9 @@ app.use('/api/location', locationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/posts', postRoutes);
+
+// Pass io to posts routes
+setSocketIO(io);
 
 // Socket.IO
 setupSocket(io);
