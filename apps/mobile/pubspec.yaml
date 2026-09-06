@@ -1,0 +1,38 @@
+name: timquanhday
+description: TimQuanhDay - Kết nối mọi người xung quanh
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.3.0
+  socket_io_client: ^3.0.2
+  shared_preferences: ^2.5.0
+  provider: ^6.1.5
+  intl: ^0.20.0
+  image_picker: ^1.1.2
+  cached_network_image: ^3.4.1
+  geolocator: ^13.0.0
+  geocoding: ^3.0.0
+  flutter_local_notifications: ^18.0.1
+  timeago: ^3.7.0
+  shimmer: ^3.0.0
+  pull_to_refresh: ^2.0.0
+  mime: ^2.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: AppIcons
+      fonts:
+        - asset: assets/fonts/AppIcons.ttf
