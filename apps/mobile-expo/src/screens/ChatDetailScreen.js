@@ -27,9 +27,11 @@ export default function ChatDetailScreen({ route, navigation }) {
   const [otherUser, setOtherUser] = useState(null);
   const [showInfo, setShowInfo] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-  const [reactionMsgId, setReactionMsgId] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const flatListRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     fetchMessages();
@@ -79,6 +81,7 @@ export default function ChatDetailScreen({ route, navigation }) {
     setLoading(false);
   }
 
+  // ── Send text message ──
   function sendMessage() {
     if (!text.trim() || !user?.id) return;
     const tempId = "temp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
@@ -114,43 +117,123 @@ export default function ChatDetailScreen({ route, navigation }) {
     }
   }
 
-  function deleteMessage(msgId) {
-    Alert.alert("Thu hồi tin nhắn", "Bạn muốn thu hồi tin nhắn này?", [
-      { text: "Huỷ", style: "cancel" },
-      { text: "Thu hồi", style: "destructive", onPress: () => {
-        const socket = getSocket();
-        if (socket) socket.emit("message:delete", { messageId: msgId, conversationId });
-      }},
-    ]);
-  }
-
-  function toggleReaction(msgId, emoji) {
+  // ── Send emoji instantly (like web app) ──
+  function sendEmoji(emoji) {
+    if (!user?.id) return;
+    const tempId = "temp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    const optimisticMsg = {
+      id: tempId, conversation_id: conversationId, sender_id: user.id,
+      content: emoji, type: "text", created_at: new Date().toISOString(),
+      status: "sending", client_temp_id: tempId, sender_name: user.name,
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setShowEmoji(false);
     const socket = getSocket();
-    if (socket) socket.emit("message:react", { messageId: msgId, conversationId, emoji });
-    setReactionMsgId(null);
+    if (socket) {
+      socket.emit("message:send", {
+        conversationId, content: emoji, type: "text", receiverId, tempId,
+      }, (response) => {
+        if (response?.success && response?.message) {
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === tempId || m.client_temp_id === tempId);
+            if (idx >= 0) { const next = [...prev]; next[idx] = { ...response.message, id: response.messageId, client_temp_id: tempId, status: "sent" }; return next; }
+            return prev;
+          });
+        } else if (response?.success) {
+          setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, id: response.messageId, status: "sent" } : m));
+        }
+      });
+    }
   }
 
+  // ── Long press on message → show actions ──
+  function handleLongPress(msg) {
+    if (msg.is_deleted || msg.id?.startsWith("temp_")) return;
+    const isMine = msg.sender_id === user?.id;
+    const options = [
+      { text: "Trả lời", onPress: () => setReplyTo({ id: msg.id, content: msg.content, sender_id: msg.sender_id }) },
+      { text: "Thả cảm xúc", onPress: () => {
+        // Show emoji picker inline
+        Alert.alert("Chọn cảm xúc", "", EMOJIS.map((e) => ({
+          text: e, onPress: () => {
+            const socket = getSocket();
+            if (socket) socket.emit("message:react", { messageId: msg.id, conversationId, emoji: e });
+          },
+        })).concat([{ text: "Huỷ", style: "cancel" }]));
+      }},
+    ];
+    if (isMine) {
+      options.push({ text: "Thu hồi", style: "destructive", onPress: () => {
+        Alert.alert("Thu hồi tin nhắn", "Xác nhận thu hồi?", [
+          { text: "Huỷ", style: "cancel" },
+          { text: "Thu hồi", style: "destructive", onPress: () => {
+            const socket = getSocket(); if (socket) socket.emit("message:delete", { messageId: msg.id, conversationId });
+          }},
+        ]);
+      }});
+    }
+    Alert.alert("Tin nhắn", "", options);
+  }
+
+  // ── Pick image + preview ──
   async function pickImage() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (result.canceled) return;
-    setUploading(true);
     const file = result.assets[0];
+    setSelectedImage(file);
+    setPreviewUrl(file.uri);
+  }
+
+  function cancelImage() {
+    setSelectedImage(null);
+    setPreviewUrl(null);
+  }
+
+  // ── Send image (upload + socket) ──
+  async function sendImageMessage() {
+    if (!selectedImage || !user?.id) return;
+    setUploading(true);
+    const tempId = "img_" + Date.now();
+    // Show optimistic message with preview
+    const optimisticMsg = {
+      id: tempId, conversation_id: conversationId, sender_id: user.id,
+      content: "", type: "image", metadata: { attachmentUrl: previewUrl },
+      created_at: new Date().toISOString(), status: "uploading", client_temp_id: tempId, sender_name: user.name,
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setSelectedImage(null);
+    setPreviewUrl(null);
+
     const formData = new FormData();
-    formData.append("image", { uri: file.uri, type: "image/jpeg", name: "photo.jpg" });
+    formData.append("image", { uri: selectedImage.uri, type: "image/jpeg", name: "photo.jpg" });
     const token = await AsyncStorage.getItem("accessToken");
     try {
       const res = await fetch("https://timquanhday.de/api/upload/image", {
         method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
       });
       const data = await res.json();
+      // Update optimistic to sending
+      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "sending", metadata: { ...m.metadata, attachmentUrl: data.url } } : m));
       const socket = getSocket();
       if (socket) {
         socket.emit("message:send", {
-          conversationId, content: "", type: "image", receiverId,
-          attachmentUrl: data.url, attachmentName: data.filename, tempId: "img_" + Date.now(),
+          conversationId, content: "", type: "image", receiverId, tempId,
+          attachmentUrl: data.url, attachmentName: data.filename,
+        }, (response) => {
+          if (response?.success) {
+            setMessages((prev) => {
+              const idx = prev.findIndex((m) => m.id === tempId || m.client_temp_id === tempId);
+              if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], id: response.messageId, status: "sent" }; return next; }
+              return prev;
+            });
+          } else {
+            setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
+          }
         });
       }
-    } catch (e) {}
+    } catch (e) {
+      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
+    }
     setUploading(false);
   }
 
@@ -160,6 +243,14 @@ export default function ChatDetailScreen({ route, navigation }) {
       if (result.canceled) return;
       setUploading(true);
       const file = result.assets[0];
+      const tempId = "file_" + Date.now();
+      const optimisticMsg = {
+        id: tempId, conversation_id: conversationId, sender_id: user.id,
+        content: file.name, type: "file", created_at: new Date().toISOString(),
+        status: "uploading", client_temp_id: tempId, sender_name: user.name,
+      };
+      setMessages((prev) => [...prev, optimisticMsg]);
+
       const formData = new FormData();
       formData.append("file", { uri: file.uri, type: file.mimeType || "application/octet-stream", name: file.name });
       const token = await AsyncStorage.getItem("accessToken");
@@ -170,12 +261,29 @@ export default function ChatDetailScreen({ route, navigation }) {
       const socket = getSocket();
       if (socket) {
         socket.emit("message:send", {
-          conversationId, content: file.name, type: "file", receiverId,
-          attachmentUrl: data.url, attachmentName: file.name, tempId: "file_" + Date.now(),
+          conversationId, content: file.name, type: "file", receiverId, tempId,
+          attachmentUrl: data.url, attachmentName: file.name,
+        }, (response) => {
+          if (response?.success) {
+            setMessages((prev) => {
+              const idx = prev.findIndex((m) => m.id === tempId || m.client_temp_id === tempId);
+              if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], id: response.messageId, status: "sent" }; return next; }
+              return prev;
+            });
+          } else {
+            setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
+          }
         });
       }
     } catch (e) {}
     setUploading(false);
+  }
+
+  function handleTyping(val) {
+    setText(val);
+    if (!receiverId) return;
+    const socket = getSocket();
+    if (socket) socket.emit("typing:start", { conversationId, receiverId });
   }
 
   function formatTime(d) {
@@ -195,7 +303,7 @@ export default function ChatDetailScreen({ route, navigation }) {
     const reactions = item.reactions || [];
     const isFailed = item.status === "failed";
     const isSending = item.status === "sending" || item.id?.startsWith("temp_");
-    const noBubble = isImage;
+    const isUploading = item.status === "uploading";
 
     return (
       <View style={[styles.msgWrap, isMine ? { alignItems: "flex-end" } : { alignItems: "flex-start" }]}>
@@ -209,44 +317,28 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           </View>
         )}
-
-        {/* Message row */}
         <View style={styles.msgRow}>
-          {/* Avatar for other user */}
-          {!isMine && !noBubble && (
+          {!isMine && !isImage && (
             <View style={styles.msgAvatar}>
               <Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text>
             </View>
           )}
-
           <View style={{ maxWidth: "82%" }}>
-            {/* Hover actions (above message) */}
-            {!item.is_deleted && !isSending && (
-              <View style={[styles.msgActions, { marginBottom: 2 }]}>
-                <TouchableOpacity onPress={() => setReplyTo({ id: item.id, content: item.content, sender_id: item.sender_id })} style={styles.actionBtn}>
-                  <Ionicons name="arrow-undo" size={14} color="#65676B" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setReactionMsgId(reactionMsgId === item.id ? null : item.id)} style={styles.actionBtn}>
-                  <Ionicons name="happy-outline" size={14} color="#65676B" />
-                </TouchableOpacity>
-                {isMine && (
-                  <TouchableOpacity onPress={() => deleteMessage(item.id)} style={styles.actionBtn}>
-                    <Ionicons name="trash-outline" size={14} color="#EF4444" />
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
             {item.is_deleted ? (
               <Text style={[styles.deletedText, isMine && { textAlign: "right" }]}>{item.content}</Text>
             ) : (
-              <View style={[
-                styles.bubble,
-                isMine ? styles.bubbleMine : styles.bubbleOther,
-                isSending ? { opacity: 0.65 } : {},
-                isFailed ? { borderWidth: 1, borderColor: "#EF4444" } : {},
-              ]}>
-                {/* Reply bar inside */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onLongPress={() => handleLongPress(item)}
+                delayLongPress={400}
+                style={[
+                  styles.bubble,
+                  isMine ? styles.bubbleMine : styles.bubbleOther,
+                  isImage ? { backgroundColor: "transparent", padding: 0, elevation: 0 } : {},
+                  (isSending || isUploading) ? { opacity: 0.65 } : {},
+                  isFailed ? { borderWidth: 1, borderColor: "#EF4444" } : {},
+                ]}
+              >
                 {item.reply_preview && !item.reply_preview.is_deleted && (
                   <View style={[styles.inlineReply, isMine ? { borderLeftColor: "rgba(255,255,255,0.5)" } : { borderLeftColor: colors.primary }]}>
                     <Text style={[styles.inlineReplyText, isMine ? { color: "rgba(255,255,255,0.7)" } : { color: "#65676B" }]} numberOfLines={1}>{item.reply_preview.content}</Text>
@@ -262,39 +354,25 @@ export default function ChatDetailScreen({ route, navigation }) {
                 ) : (
                   <Text style={[styles.msgText, isMine && { color: "#fff" }]}>{item.content}</Text>
                 )}
-                {/* Time + status */}
                 <View style={[styles.timeRow, isMine ? { justifyContent: "flex-end" } : { justifyContent: "flex-start" }]}>
                   <Text style={[styles.time, isMine && { color: "rgba(255,255,255,0.6)" }]}>{formatTime(item.created_at)}</Text>
                   {isMine && !item.is_deleted && (
                     <Text style={[styles.status, isMine && { color: "rgba(255,255,255,0.6)" }]}>
-                      {isFailed ? "⚠" : isSending ? "" : "✓✓"}
+                      {isFailed ? "⚠" : isUploading ? "↑" : isSending ? "" : "✓✓"}
                     </Text>
                   )}
                 </View>
-                {/* Reactions badge */}
                 {reactions.length > 0 && (
                   <View style={[styles.reactions, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
                     {reactions.map((r, i) => <Text key={i} style={{ fontSize: 14 }}>{r.emoji}</Text>)}
                   </View>
                 )}
-                {/* Retry */}
                 {isFailed && (
                   <TouchableOpacity onPress={() => { setMessages((prev) => prev.filter((m) => m.id !== item.id)); setText(item.content); }}>
                     <Text style={styles.retry}>Thử lại</Text>
                   </TouchableOpacity>
                 )}
-              </View>
-            )}
-
-            {/* Inline emoji picker */}
-            {reactionMsgId === item.id && (
-              <View style={[styles.emojiPicker, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
-                {EMOJIS.map((e) => (
-                  <TouchableOpacity key={e} onPress={() => toggleReaction(item.id, e)}>
-                    <Text style={{ fontSize: 24, paddingHorizontal: 3 }}>{e}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -316,7 +394,7 @@ export default function ChatDetailScreen({ route, navigation }) {
         <View style={styles.headerInfo}>
           <Text style={styles.headerName} numberOfLines={1}>{otherUser?.name || name || "Đoạn chat"}</Text>
           <Text style={styles.headerStatus}>
-            {typing ? "Đang nhập..." : otherUser?.is_online === 1 ? "Đang hoạt động" : otherUser?.last_seen ? `Hoạt động ${formatTime(otherUser.last_seen)} trước` : ""}
+            {typing ? "Đang nhập..." : otherUser?.is_online === 1 ? "Đang hoạt động" : ""}
           </Text>
         </View>
         <TouchableOpacity onPress={() => setShowInfo(true)} style={styles.headerBtn}>
@@ -336,15 +414,25 @@ export default function ChatDetailScreen({ route, navigation }) {
           contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 12, paddingBottom: 8 }}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          ListHeaderComponent={messages.length > 0 ? (
-            <View style={styles.dateHeader}>
-              <Text style={styles.dateText}>Các tin nhắn được bảo mật đầu cuối</Text>
-            </View>
-          ) : null}
           renderItem={renderMessage}
         />
       )}
       {typing && <Text style={styles.typing}>Đang nhập...</Text>}
+
+      {/* Image preview */}
+      {previewUrl && (
+        <View style={styles.previewBar}>
+          <Image source={{ uri: previewUrl }} style={styles.previewImage} />
+          <View style={styles.previewActions}>
+            <TouchableOpacity onPress={cancelImage} style={styles.previewBtn}>
+              <Text style={styles.previewBtnText}>Huỷ</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={sendImageMessage} style={[styles.previewBtn, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.previewBtnText, { color: "#fff" }]}>Gửi ảnh</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Reply bar */}
       {replyTo && (
@@ -370,11 +458,13 @@ export default function ChatDetailScreen({ route, navigation }) {
           <Ionicons name={showEmoji ? "keypad" : "happy-outline"} size={24} color={colors.primary} />
         </TouchableOpacity>
         <TextInput
+          ref={inputRef}
           style={styles.input}
           placeholder="Tin nhắn..."
           placeholderTextColor="#8A8D91"
           value={text}
-          onChangeText={setText}
+          onChangeText={handleTyping}
+          onFocus={() => setShowEmoji(false)}
           multiline
         />
         <TouchableOpacity onPress={pickImage} style={styles.inputBtn}>
@@ -383,20 +473,24 @@ export default function ChatDetailScreen({ route, navigation }) {
         <TouchableOpacity onPress={pickFile} style={styles.inputBtn}>
           <Ionicons name="attach-outline" size={22} color={colors.primary} />
         </TouchableOpacity>
+        {/* Send button */}
+        <TouchableOpacity onPress={sendMessage} disabled={!text.trim()} style={[styles.sendBtn, !text.trim() && { opacity: 0.4 }]}>
+          <Ionicons name="send" size={20} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Emoji bar */}
       {showEmoji && (
         <View style={[styles.emojiBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
           {EMOJIS.map((e) => (
-            <TouchableOpacity key={e} onPress={() => { setText((prev) => prev + e); }}>
+            <TouchableOpacity key={e} onPress={() => sendEmoji(e)}>
               <Text style={{ fontSize: 28, paddingHorizontal: 5 }}>{e}</Text>
             </TouchableOpacity>
           ))}
         </View>
       )}
 
-      {/* Uploading */}
+      {/* Uploading overlay */}
       {uploading && (
         <View style={styles.uploading}>
           <ActivityIndicator color="#fff" />
@@ -434,7 +528,6 @@ export default function ChatDetailScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  // Header
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   headerBack: { padding: 6 },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginLeft: 4 },
@@ -444,66 +537,51 @@ const styles = StyleSheet.create({
   headerName: { fontSize: 16, fontWeight: "600", color: "#000" },
   headerStatus: { fontSize: 12, color: "#65676B", marginTop: 1 },
   headerBtn: { padding: 6 },
-  // Messages
   list: { flex: 1, backgroundColor: "#fff" },
   msgWrap: { marginBottom: 6 },
   msgRow: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
   msgAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   msgAvatarText: { fontSize: 11, fontWeight: "700", color: colors.primary },
-  // Date header
-  dateHeader: { alignItems: "center", marginBottom: 12 },
-  dateText: { fontSize: 12, color: "#65676B", backgroundColor: "#F0F2F5", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, overflow: "hidden" },
-  // Bubble
   bubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18 },
   bubbleMine: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: "#F0F2F5", borderBottomLeftRadius: 4 },
   msgText: { fontSize: 15, color: "#000", lineHeight: 20 },
   deletedText: { fontSize: 13, fontStyle: "italic", color: "#65676B", paddingVertical: 4 },
-  // Inline reply
   inlineReply: { borderLeftWidth: 2, borderLeftColor: colors.primary, paddingLeft: 8, marginBottom: 4 },
   inlineReplyText: { fontSize: 12, color: "#65676B" },
-  // Image
-  image: { width: 200, height: 200, borderRadius: 12, backgroundColor: "#F0F2F5" },
-  // File
+  image: { width: 220, height: 220, borderRadius: 14, backgroundColor: "#F0F2F5" },
   fileRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   fileText: { fontSize: 14, color: "#000", flex: 1 },
-  // Time
   timeRow: { flexDirection: "row", alignItems: "center", marginTop: 3, gap: 3 },
   time: { fontSize: 10, color: "#65676B" },
   status: { fontSize: 10 },
-  // Reactions
-  reactions: { flexDirection: "row", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: "#E5E5E5", marginTop: 4, elevation: 1, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },
-  // Retry
+  reactions: { flexDirection: "row", backgroundColor: "#fff", borderRadius: 12, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: "#E5E5E5", marginTop: 4, elevation: 1 },
   retry: { fontSize: 12, color: "#EF4444", fontWeight: "600", marginTop: 4, textAlign: "right" },
-  // Actions
-  msgActions: { flexDirection: "row", gap: 4 },
-  actionBtn: { padding: 4, backgroundColor: "#fff", borderRadius: 6, elevation: 1, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 2, shadowOffset: { width: 0, height: 1 } },
-  // Emoji picker
-  emojiPicker: { flexDirection: "row", backgroundColor: "#fff", borderRadius: 12, padding: 6, borderWidth: 1, borderColor: "#E5E5E5", marginTop: 4, elevation: 3, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
-  // Reply preview
   replyPreview: { flexDirection: "row", marginBottom: 2 },
   replyBar: { width: 3, borderRadius: 2 },
   replyContent: { marginLeft: 6, flex: 1 },
   replyLabel: { fontSize: 11, fontWeight: "600" },
   replyText: { fontSize: 11, marginTop: 1 },
-  // Typing
   typing: { paddingHorizontal: 16, paddingVertical: 4, fontSize: 12, fontStyle: "italic", color: "#65676B" },
-  // Reply bar container
   replyBarContainer: { backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#E5E5E5", paddingHorizontal: 12, paddingVertical: 8 },
   replyBarInner: { flexDirection: "row", alignItems: "center" },
   replyLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
   replyBarLabel: { fontSize: 12, fontWeight: "600", color: colors.primary },
   replyBarContent: { fontSize: 12, color: "#65676B", marginTop: 1 },
+  // Preview bar
+  previewBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
+  previewImage: { width: 48, height: 48, borderRadius: 8, backgroundColor: "#F0F2F5" },
+  previewActions: { flexDirection: "row", marginLeft: 12, gap: 8 },
+  previewBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: "#F0F2F5" },
+  previewBtnText: { fontSize: 14, fontWeight: "600", color: colors.primary },
   // Input
   inputBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 8, paddingVertical: 6, borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
   inputBtn: { padding: 6 },
   input: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 80, marginHorizontal: 4, fontSize: 15, color: "#000" },
-  // Emoji bar
+  sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginLeft: 2 },
   emojiBar: { flexDirection: "row", backgroundColor: "#fff", padding: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", flexWrap: "wrap", justifyContent: "center" },
-  // Uploading
   uploading: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.3)", alignItems: "center", justifyContent: "center" },
   uploadingText: { marginTop: 8, fontSize: 14, color: "#fff", fontWeight: "600" },
-  // Modal
   modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
   modalSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, alignItems: "center" },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E5E5", marginBottom: 20 },
