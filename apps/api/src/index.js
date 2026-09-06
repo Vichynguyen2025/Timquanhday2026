@@ -17,7 +17,8 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: process.env.CORS_ORIGIN?.split(',') || '*', credentials: true },
-  path: '/ws'
+  path: '/ws',
+  addTrailingSlash: false
 });
 
 app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || '*', credentials: true }));
