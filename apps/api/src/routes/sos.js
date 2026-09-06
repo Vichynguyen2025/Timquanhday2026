@@ -354,10 +354,27 @@ router.post('/:id/accept', authenticate, async (req, res) => {
     // Notify provider
     await createNotification(response.provider_id, 'sos', 'Đã chọn bạn', 'Bạn đã được chọn để hỗ trợ yêu cầu SOS', { sosId: req.params.id });
 
+    // Create or get private conversation between requester and provider
+    const existingConv = await queryOne(`
+      SELECT c.id FROM conversations c
+      JOIN conversation_members cm1 ON c.id = cm1.conversation_id AND cm1.user_id = ?
+      JOIN conversation_members cm2 ON c.id = cm2.conversation_id AND cm2.user_id = ?
+      WHERE c.type = 'private'
+    `, [req.user.id, response.provider_id]);
+    let conversationId;
+    if (existingConv) {
+      conversationId = existingConv.id;
+    } else {
+      conversationId = crypto.randomUUID();
+      await query('INSERT INTO conversations (id, type) VALUES (?, ?)', [conversationId, 'private']);
+      await query('INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+        [conversationId, req.user.id, conversationId, response.provider_id]);
+    }
+
     const updated = await enrichSOS(await queryOne('SELECT * FROM sos_requests WHERE id = ?', [req.params.id]), req.user.id);
     if (io) io.emit('sos:accepted', updated);
 
-    res.json(updated);
+    res.json({ ...updated, conversation_id: conversationId });
   } catch (err) {
     console.error('[SOS] Accept error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -378,6 +395,34 @@ router.post('/:id/cancel', authenticate, async (req, res) => {
     if (io) io.emit('sos:cancelled', { sosId: req.params.id });
     res.json({ cancelled: true });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/sos/:id/reject — Reject a provider ──
+router.post('/:id/reject', authenticate, async (req, res) => {
+  try {
+    const { responseId } = req.body;
+    if (!responseId) return res.status(400).json({ error: 'responseId required' });
+
+    const sos = await queryOne('SELECT * FROM sos_requests WHERE id = ?', [req.params.id]);
+    if (!sos) return res.status(404).json({ error: 'SOS not found' });
+    if (sos.user_id !== req.user.id) return res.status(403).json({ error: 'Not owner' });
+
+    const response = await queryOne('SELECT * FROM sos_responses WHERE id = ? AND sos_id = ?', [responseId, req.params.id]);
+    if (!response) return res.status(404).json({ error: 'Response not found' });
+    if (response.status !== 'PENDING') return res.status(400).json({ error: 'Response already processed' });
+
+    await query('UPDATE sos_responses SET status = ? WHERE id = ?', ['DECLINED', responseId]);
+
+    // Notify provider
+    await createNotification(response.provider_id, 'sos', 'Không được chọn', 'Yêu cầu SOS của bạn đã chọn người hỗ trợ khác', { sosId: req.params.id });
+
+    if (io) io.emit('sos:updated', { sosId: req.params.id, responseId, status: 'DECLINED' });
+
+    res.json({ rejected: true, responseId });
+  } catch (err) {
+    console.error('[SOS] Reject error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

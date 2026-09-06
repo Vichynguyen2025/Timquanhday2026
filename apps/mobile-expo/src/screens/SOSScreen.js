@@ -311,7 +311,7 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
 }
 
 // ─── Main SOS Screen ──────────────────────────────
-export default function SOSScreen() {
+export default function SOSScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { currentLocation: sharedLocation } = useLocation();
   const [tab, setTab] = useState("radar");
@@ -329,6 +329,9 @@ export default function SOSScreen() {
   const [helperRadius, setHelperRadius] = useState(1000);
   const [helperAvailable, setHelperAvailable] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // Provider management
+  const [selectedSOS, setSelectedSOS] = useState(null); // SOS with providers to show
+  const [showProviders, setShowProviders] = useState(false);
 
   useFocusEffect(useCallback(() => {
     fetchSOS(); fetchHelperProfile();
@@ -400,6 +403,39 @@ export default function SOSScreen() {
   }
 
   const statusLabels = { OPEN: "Đang mở", MATCHING: "Đang ghép", ACCEPTED: "Đã chấp nhận", IN_PROGRESS: "Đang xử lý", COMPLETED: "Hoàn thành", CANCELLED: "Đã huỷ" };
+
+  // ─── Provider accept/reject ──────────────────────
+  async function acceptProvider(item, response) {
+    try {
+      const res = await api.post(`/sos/${item.id}/accept`, { responseId: response.id });
+      const data = res.data;
+      setShowProviders(false);
+      setSelectedSOS(null);
+      fetchSOS();
+      if (data.conversation_id) {
+        navigation?.navigate("ChatDetail", {
+          conversationId: data.conversation_id,
+          name: response.provider_name || "Người hỗ trợ",
+        });
+      }
+    } catch (e) {
+      Alert.alert("Lỗi", "Không thể chọn người hỗ trợ này");
+    }
+  }
+
+  async function rejectProvider(item, response) {
+    try {
+      await api.post(`/sos/${item.id}/reject`, { responseId: response.id });
+      fetchSOS();
+    } catch (e) {
+      Alert.alert("Lỗi", "Không thể từ chối");
+    }
+  }
+
+  function openProviders(sosItem) {
+    setSelectedSOS(sosItem);
+    setShowProviders(true);
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
@@ -508,7 +544,27 @@ export default function SOSScreen() {
                 <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.retryBtn, { marginTop: 16 }]}><Text style={styles.retryText}>Tạo yêu cầu</Text></TouchableOpacity>
               </View>
             }
-            renderItem={({ item }) => <SOSCard item={item} onPress={openSOSDetail} isOwner />}
+            renderItem={({ item }) => {
+              const hasPending = (item.response_count || 0) > 0 && item.status === 'MATCHING';
+              return (
+                <View>
+                  <SOSCard item={item} onPress={openSOSDetail} isOwner />
+                  {hasPending && (
+                    <TouchableOpacity style={styles.providerBadge} onPress={() => openProviders(item)}>
+                      <Ionicons name="people" size={16} color="#22C55E" />
+                      <Text style={styles.providerBadgeText}>🟢 {item.response_count} người có thể hỗ trợ</Text>
+                      <Text style={styles.providerBadgeAction}>Xem →</Text>
+                    </TouchableOpacity>
+                  )}
+                  {item.status === 'ACCEPTED' && (
+                    <View style={[styles.providerBadge, { backgroundColor: "#F0FDF4", borderColor: "#22C55E" }]}>
+                      <Ionicons name="checkmark-circle" size={16} color="#22C55E" />
+                      <Text style={[styles.providerBadgeText, { color: "#22C55E" }]}>Đã chọn người hỗ trợ</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            }}
           />
         )
       )}
@@ -566,6 +622,44 @@ export default function SOSScreen() {
                 {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>LƯU CÀI ĐẶT</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Provider List Modal */}
+      <Modal visible={showProviders} transparent animationType="slide" onRequestClose={() => setShowProviders(false)}>
+        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <View style={[styles.helperSheet, { paddingBottom: insets.bottom }]}>
+            <View style={styles.createHandle} />
+            <View style={styles.createHeader}>
+              <Text style={styles.createTitle}>Người hỗ trợ</Text>
+              <TouchableOpacity onPress={() => setShowProviders(false)}><Ionicons name="close" size={24} color="#000" /></TouchableOpacity>
+            </View>
+            <FlatList
+              data={selectedSOS?.responses?.filter(r => r.status === 'PENDING') || []}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ padding: 16 }}
+              ListEmptyComponent={<Text style={{ textAlign: "center", color: "#9CA3AF", padding: 20 }}>Không có người hỗ trợ</Text>}
+              renderItem={({ item }) => (
+                <View style={styles.providerCard}>
+                  <View style={styles.providerAvatar}>
+                    <Text style={styles.providerAvatarText}>{(item.provider_name || "?")[0].toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.providerName}>{item.provider_name || "Người dùng"}</Text>
+                    <Text style={styles.providerMsg}>{item.message || "Có thể hỗ trợ bạn"}</Text>
+                  </View>
+                  <View style={{ gap: 6 }}>
+                    <TouchableOpacity style={styles.acceptBtn} onPress={() => acceptProvider(selectedSOS, item)}>
+                      <Text style={styles.acceptBtnText}>Đồng ý</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.rejectBtn} onPress={() => rejectProvider(selectedSOS, item)}>
+                      <Text style={styles.rejectBtnText}>Hủy</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            />
           </View>
         </View>
       </Modal>
@@ -653,4 +747,18 @@ const styles = StyleSheet.create({
   submitWrap: { paddingHorizontal: 20, paddingVertical: 12, borderTopWidth: 0.5, borderTopColor: "#E5E7EB" },
   submitBtn: { backgroundColor: "#EF4444", paddingVertical: 16, borderRadius: 14, alignItems: "center", elevation: 2, shadowColor: "#EF4444", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   submitText: { color: "#fff", fontWeight: "700", fontSize: 16, letterSpacing: 0.5 },
+  // Provider badge
+  providerBadge: { flexDirection: "row", alignItems: "center", backgroundColor: "#F0FDF4", borderWidth: 1, borderColor: "#86EFAC", borderRadius: 10, padding: 10, marginTop: -4, marginBottom: 8, marginHorizontal: 14, gap: 6 },
+  providerBadgeText: { flex: 1, fontSize: 13, fontWeight: "600", color: "#16A34A" },
+  providerBadgeAction: { fontSize: 13, fontWeight: "600", color: colors.primary },
+  // Provider list
+  providerCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: "#E5E7EB", gap: 12 },
+  providerAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
+  providerAvatarText: { fontSize: 16, fontWeight: "700", color: colors.primary },
+  providerName: { fontSize: 15, fontWeight: "600", color: "#111827" },
+  providerMsg: { fontSize: 13, color: "#6B7280", marginTop: 2 },
+  acceptBtn: { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, alignItems: "center", minWidth: 70 },
+  acceptBtnText: { color: "#fff", fontWeight: "700", fontSize: 13 },
+  rejectBtn: { backgroundColor: "#F3F4F6", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, alignItems: "center", borderWidth: 1, borderColor: "#D1D5DB", minWidth: 70 },
+  rejectBtnText: { color: "#6B7280", fontWeight: "600", fontSize: 13 },
 });
