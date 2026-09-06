@@ -6,6 +6,7 @@ import * as DocumentPicker from "expo-document-picker";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { useAuth } from "../contexts/AuthContext";
+import { useSocket } from "../contexts/SocketContext";
 import { colors } from "../theme/colors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -17,6 +18,7 @@ const EMOJIS = ["👍", "❤️", "🔥", "😂", "😍", "🎉", "💯", "✨",
 export default function ChatDetailScreen({ route, navigation }) {
   const { conversationId, name } = route.params;
   const { user } = useAuth();
+  const { onlineUsers } = useSocket();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
@@ -30,8 +32,14 @@ export default function ChatDetailScreen({ route, navigation }) {
   const [uploading, setUploading] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [docName, setDocName] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Realtime presence: check if other user is online
+  const isOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : (otherUser?.is_online === 1);
 
   useEffect(() => {
     fetchMessages();
@@ -81,7 +89,6 @@ export default function ChatDetailScreen({ route, navigation }) {
     setLoading(false);
   }
 
-  // ── Send text message ──
   function sendMessage() {
     if (!text.trim() || !user?.id) return;
     const tempId = "temp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
@@ -117,7 +124,6 @@ export default function ChatDetailScreen({ route, navigation }) {
     }
   }
 
-  // ── Send emoji instantly (like web app) ──
   function sendEmoji(emoji) {
     if (!user?.id) return;
     const tempId = "temp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
@@ -146,14 +152,12 @@ export default function ChatDetailScreen({ route, navigation }) {
     }
   }
 
-  // ── Long press on message → show actions ──
   function handleLongPress(msg) {
     if (msg.is_deleted || msg.id?.startsWith("temp_")) return;
     const isMine = msg.sender_id === user?.id;
     const options = [
       { text: "Trả lời", onPress: () => setReplyTo({ id: msg.id, content: msg.content, sender_id: msg.sender_id }) },
       { text: "Thả cảm xúc", onPress: () => {
-        // Show emoji picker inline
         Alert.alert("Chọn cảm xúc", "", EMOJIS.map((e) => ({
           text: e, onPress: () => {
             const socket = getSocket();
@@ -175,45 +179,51 @@ export default function ChatDetailScreen({ route, navigation }) {
     Alert.alert("Tin nhắn", "", options);
   }
 
-  // ── Pick image + preview ──
+  // ── Image picker + preview ──
   async function pickImage() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
     if (result.canceled) return;
     const file = result.assets[0];
     setSelectedImage(file);
     setPreviewUrl(file.uri);
+    setSelectedDoc(null);
+    setDocName(null);
   }
 
-  function cancelImage() {
+  function cancelAttachment() {
     setSelectedImage(null);
+    if (previewUrl) { URL.revokeObjectURL?.(previewUrl); }
     setPreviewUrl(null);
+    setSelectedDoc(null);
+    setDocName(null);
+    setUploadProgress(null);
   }
 
-  // ── Send image (upload + socket) ──
-  async function sendImageMessage() {
+  // ── Send image ──
+  async function sendImage() {
     if (!selectedImage || !user?.id) return;
     setUploading(true);
+    setUploadProgress("Đang tải lên...");
     const tempId = "img_" + Date.now();
-    // Show optimistic message with preview
     const optimisticMsg = {
       id: tempId, conversation_id: conversationId, sender_id: user.id,
       content: "", type: "image", metadata: { attachmentUrl: previewUrl },
       created_at: new Date().toISOString(), status: "uploading", client_temp_id: tempId, sender_name: user.name,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
-    setSelectedImage(null);
-    setPreviewUrl(null);
+    cancelAttachment();
 
     const formData = new FormData();
     formData.append("image", { uri: selectedImage.uri, type: "image/jpeg", name: "photo.jpg" });
     const token = await AsyncStorage.getItem("accessToken");
     try {
+      setUploadProgress("Đang tải ảnh...");
       const res = await fetch("https://timquanhday.de/api/upload/image", {
         method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
       });
       const data = await res.json();
-      // Update optimistic to sending
       setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "sending", metadata: { ...m.metadata, attachmentUrl: data.url } } : m));
+      setUploadProgress("Đang gửi...");
       const socket = getSocket();
       if (socket) {
         socket.emit("message:send", {
@@ -235,21 +245,32 @@ export default function ChatDetailScreen({ route, navigation }) {
       setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
     }
     setUploading(false);
+    setUploadProgress(null);
   }
 
+  // ── Pick file + send ──
   async function pickFile() {
     try {
       const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
       if (result.canceled) return;
-      setUploading(true);
       const file = result.assets[0];
+      setSelectedDoc(file);
+      setDocName(file.name);
+      setSelectedImage(null);
+      setPreviewUrl(null);
+      // Auto-send file
+      setUploading(true);
+      setUploadProgress("Đang tải file...");
       const tempId = "file_" + Date.now();
       const optimisticMsg = {
         id: tempId, conversation_id: conversationId, sender_id: user.id,
         content: file.name, type: "file", created_at: new Date().toISOString(),
         status: "uploading", client_temp_id: tempId, sender_name: user.name,
+        metadata: { attachmentName: file.name, attachmentSize: file.size },
       };
       setMessages((prev) => [...prev, optimisticMsg]);
+      setSelectedDoc(null);
+      setDocName(null);
 
       const formData = new FormData();
       formData.append("file", { uri: file.uri, type: file.mimeType || "application/octet-stream", name: file.name });
@@ -258,6 +279,7 @@ export default function ChatDetailScreen({ route, navigation }) {
         method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
       });
       const data = await res.json();
+      setUploadProgress("Đang gửi...");
       const socket = getSocket();
       if (socket) {
         socket.emit("message:send", {
@@ -277,6 +299,7 @@ export default function ChatDetailScreen({ route, navigation }) {
       }
     } catch (e) {}
     setUploading(false);
+    setUploadProgress(null);
   }
 
   function handleTyping(val) {
@@ -294,6 +317,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   }
 
   const initial = (otherUser?.name || name || "?")[0].toUpperCase();
+  const statusText = typing ? "Đang nhập..." : isOnline ? "Đang hoạt động" : "Không hoạt động";
 
   const renderMessage = ({ item }) => {
     const isMine = item.sender_id === user?.id;
@@ -307,7 +331,6 @@ export default function ChatDetailScreen({ route, navigation }) {
 
     return (
       <View style={[styles.msgWrap, isMine ? { alignItems: "flex-end" } : { alignItems: "flex-start" }]}>
-        {/* Reply preview */}
         {item.reply_preview && !item.reply_preview.is_deleted && (
           <View style={[styles.replyPreview, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
             <View style={[styles.replyBar, isMine ? { backgroundColor: "#fff" } : { backgroundColor: colors.primary }]} />
@@ -317,12 +340,8 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           </View>
         )}
-        <View style={styles.msgRow}>
-          {!isMine && !isImage && (
-            <View style={styles.msgAvatar}>
-              <Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text>
-            </View>
-          )}
+        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
+          {!isMine && !isImage && <View style={styles.msgAvatar}><Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text></View>}
           <View style={{ maxWidth: "82%" }}>
             {item.is_deleted ? (
               <Text style={[styles.deletedText, isMine && { textAlign: "right" }]}>{item.content}</Text>
@@ -332,8 +351,7 @@ export default function ChatDetailScreen({ route, navigation }) {
                 onLongPress={() => handleLongPress(item)}
                 delayLongPress={400}
                 style={[
-                  styles.bubble,
-                  isMine ? styles.bubbleMine : styles.bubbleOther,
+                  styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther,
                   isImage ? { backgroundColor: "transparent", padding: 0, elevation: 0 } : {},
                   (isSending || isUploading) ? { opacity: 0.65 } : {},
                   isFailed ? { borderWidth: 1, borderColor: "#EF4444" } : {},
@@ -381,21 +399,23 @@ export default function ChatDetailScreen({ route, navigation }) {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}>
-      {/* Header */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+    >
+      {/* Header with realtime presence */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBack}>
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
         <View style={styles.headerAvatar}>
           <Text style={styles.headerAvatarText}>{initial}</Text>
-          {otherUser?.is_online === 1 && <View style={styles.headerOnline} />}
+          {isOnline && <View style={styles.headerOnline} />}
         </View>
         <View style={styles.headerInfo}>
           <Text style={styles.headerName} numberOfLines={1}>{otherUser?.name || name || "Đoạn chat"}</Text>
-          <Text style={styles.headerStatus}>
-            {typing ? "Đang nhập..." : otherUser?.is_online === 1 ? "Đang hoạt động" : ""}
-          </Text>
+          <Text style={[styles.headerStatus, isOnline && { color: colors.online }]}>{statusText}</Text>
         </View>
         <TouchableOpacity onPress={() => setShowInfo(true)} style={styles.headerBtn}>
           <Ionicons name="information-circle-outline" size={26} color={colors.primary} />
@@ -414,23 +434,50 @@ export default function ChatDetailScreen({ route, navigation }) {
           contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 12, paddingBottom: 8 }}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          keyboardShouldPersistTaps="handled"
           renderItem={renderMessage}
         />
       )}
       {typing && <Text style={styles.typing}>Đang nhập...</Text>}
 
-      {/* Image preview */}
-      {previewUrl && (
+      {/* Attachment Preview Bar */}
+      {(previewUrl || selectedDoc) && (
         <View style={styles.previewBar}>
-          <Image source={{ uri: previewUrl }} style={styles.previewImage} />
+          {previewUrl ? (
+            <>
+              <Image source={{ uri: previewUrl }} style={styles.previewImage} />
+              <View style={styles.previewInfo}>
+                <Text style={styles.previewName} numberOfLines={1}>{selectedImage?.fileName || "Ảnh"}</Text>
+                <Text style={styles.previewSize}>Sẵn sàng gửi</Text>
+              </View>
+            </>
+          ) : selectedDoc ? (
+            <>
+              <View style={styles.previewFileIcon}>
+                <Ionicons name="document-outline" size={24} color={colors.primary} />
+              </View>
+              <View style={styles.previewInfo}>
+                <Text style={styles.previewName} numberOfLines={1}>{docName}</Text>
+                <Text style={styles.previewSize}>File đính kèm</Text>
+              </View>
+            </>
+          ) : null}
           <View style={styles.previewActions}>
-            <TouchableOpacity onPress={cancelImage} style={styles.previewBtn}>
-              <Text style={styles.previewBtnText}>Huỷ</Text>
+            <TouchableOpacity onPress={previewUrl ? sendImage : pickFile} style={[styles.previewBtn, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.previewBtnText, { color: "#fff" }]}>Gửi</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={sendImageMessage} style={[styles.previewBtn, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.previewBtnText, { color: "#fff" }]}>Gửi ảnh</Text>
+            <TouchableOpacity onPress={cancelAttachment} style={styles.previewBtn}>
+              <Ionicons name="close" size={18} color="#65676B" />
             </TouchableOpacity>
           </View>
+        </View>
+      )}
+
+      {/* Upload progress bar */}
+      {uploadProgress && (
+        <View style={styles.progressBar}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={styles.progressText}>{uploadProgress}</Text>
         </View>
       )}
 
@@ -452,8 +499,8 @@ export default function ChatDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Input bar */}
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 6) }]}>
+      {/* Input bar — NO extra bottom padding, KeyboardAvoidingView handles it */}
+      <View style={styles.inputBar}>
         <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)} style={styles.inputBtn}>
           <Ionicons name={showEmoji ? "keypad" : "happy-outline"} size={24} color={colors.primary} />
         </TouchableOpacity>
@@ -473,7 +520,6 @@ export default function ChatDetailScreen({ route, navigation }) {
         <TouchableOpacity onPress={pickFile} style={styles.inputBtn}>
           <Ionicons name="attach-outline" size={22} color={colors.primary} />
         </TouchableOpacity>
-        {/* Send button */}
         <TouchableOpacity onPress={sendMessage} disabled={!text.trim()} style={[styles.sendBtn, !text.trim() && { opacity: 0.4 }]}>
           <Ionicons name="send" size={20} color="#fff" />
         </TouchableOpacity>
@@ -481,7 +527,7 @@ export default function ChatDetailScreen({ route, navigation }) {
 
       {/* Emoji bar */}
       {showEmoji && (
-        <View style={[styles.emojiBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+        <View style={styles.emojiBar}>
           {EMOJIS.map((e) => (
             <TouchableOpacity key={e} onPress={() => sendEmoji(e)}>
               <Text style={{ fontSize: 28, paddingHorizontal: 5 }}>{e}</Text>
@@ -490,15 +536,7 @@ export default function ChatDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Uploading overlay */}
-      {uploading && (
-        <View style={styles.uploading}>
-          <ActivityIndicator color="#fff" />
-          <Text style={styles.uploadingText}>Đang tải...</Text>
-        </View>
-      )}
-
-      {/* User Info Modal */}
+      {/* User Info Modal with realtime presence */}
       <Modal visible={showInfo} transparent animationType="slide">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowInfo(false)}>
           <View style={styles.modalSheet}>
@@ -508,8 +546,8 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
             <Text style={styles.modalName}>{otherUser?.name || "Người dùng"}</Text>
             <View style={styles.modalStatus}>
-              <View style={[styles.statusDot, { backgroundColor: otherUser?.is_online === 1 ? colors.online : "#ccc" }]} />
-              <Text style={styles.modalStatusText}>{otherUser?.is_online === 1 ? "Đang hoạt động" : "Không hoạt động"}</Text>
+              <View style={[styles.statusDot, { backgroundColor: isOnline ? colors.online : "#ccc" }]} />
+              <Text style={styles.modalStatusText}>{isOnline ? "Đang hoạt động" : "Không hoạt động"}</Text>
             </View>
             {otherUser?.bio ? <Text style={styles.modalBio}>{otherUser.bio}</Text> : null}
             <View style={styles.modalInfoRow}>
@@ -539,7 +577,6 @@ const styles = StyleSheet.create({
   headerBtn: { padding: 6 },
   list: { flex: 1, backgroundColor: "#fff" },
   msgWrap: { marginBottom: 6 },
-  msgRow: { flexDirection: "row", alignItems: "flex-end", gap: 6 },
   msgAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   msgAvatarText: { fontSize: 11, fontWeight: "700", color: colors.primary },
   bubble: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 18 },
@@ -563,25 +600,32 @@ const styles = StyleSheet.create({
   replyLabel: { fontSize: 11, fontWeight: "600" },
   replyText: { fontSize: 11, marginTop: 1 },
   typing: { paddingHorizontal: 16, paddingVertical: 4, fontSize: 12, fontStyle: "italic", color: "#65676B" },
+  // Preview bar
+  previewBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
+  previewImage: { width: 44, height: 44, borderRadius: 8, backgroundColor: "#F0F2F5" },
+  previewFileIcon: { width: 44, height: 44, borderRadius: 10, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
+  previewInfo: { flex: 1, marginLeft: 10 },
+  previewName: { fontSize: 13, fontWeight: "500", color: "#000" },
+  previewSize: { fontSize: 11, color: "#65676B", marginTop: 1 },
+  previewActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  previewBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F0F2F5", alignItems: "center", justifyContent: "center" },
+  previewBtnText: { fontSize: 13, fontWeight: "600" },
+  // Progress
+  progressBar: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#fff", paddingVertical: 6, borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
+  progressText: { fontSize: 12, color: colors.primary, marginLeft: 8 },
+  // Reply bar
   replyBarContainer: { backgroundColor: "#fff", borderTopWidth: 0.5, borderTopColor: "#E5E5E5", paddingHorizontal: 12, paddingVertical: 8 },
   replyBarInner: { flexDirection: "row", alignItems: "center" },
   replyLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
   replyBarLabel: { fontSize: 12, fontWeight: "600", color: colors.primary },
   replyBarContent: { fontSize: 12, color: "#65676B", marginTop: 1 },
-  // Preview bar
-  previewBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
-  previewImage: { width: 48, height: 48, borderRadius: 8, backgroundColor: "#F0F2F5" },
-  previewActions: { flexDirection: "row", marginLeft: 12, gap: 8 },
-  previewBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: "#F0F2F5" },
-  previewBtnText: { fontSize: 14, fontWeight: "600", color: colors.primary },
-  // Input
+  // Input - NO paddingBottom, rely on KeyboardAvoidingView
   inputBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 8, paddingVertical: 6, borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
   inputBtn: { padding: 6 },
   input: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 80, marginHorizontal: 4, fontSize: 15, color: "#000" },
   sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginLeft: 2 },
   emojiBar: { flexDirection: "row", backgroundColor: "#fff", padding: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", flexWrap: "wrap", justifyContent: "center" },
-  uploading: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.3)", alignItems: "center", justifyContent: "center" },
-  uploadingText: { marginTop: 8, fontSize: 14, color: "#fff", fontWeight: "600" },
+  // Modal
   modalOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
   modalSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, alignItems: "center" },
   modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E5E5", marginBottom: 20 },

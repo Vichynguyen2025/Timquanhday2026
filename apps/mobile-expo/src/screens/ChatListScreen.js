@@ -5,12 +5,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
+import { useSocket } from "../contexts/SocketContext";
 import { colors } from "../theme/colors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 
 export default function ChatListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { onlineUsers } = useSocket();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -80,7 +82,10 @@ export default function ChatListScreen({ navigation }) {
           </View>
           <Text style={styles.activeLabel}>Tin của bạn</Text>
         </View>
-        {conversations.filter(c => c.is_online).slice(0, 5).map(c => (
+        {conversations.filter(c => {
+          const otherId = c.participants?.[0];
+          return otherId && onlineUsers.has(otherId);
+        }).slice(0, 5).map(c => (
           <View key={c.id} style={styles.activeStory}>
             <View style={[styles.activeRing, { borderColor: colors.online }]}>
               <Text style={styles.activeAvatar}>{(c.display_name || "?")[0].toUpperCase()}</Text>
@@ -114,7 +119,11 @@ export default function ChatListScreen({ navigation }) {
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>{(item.display_name || "?")[0].toUpperCase()}</Text>
                 </View>
-                {item.is_online && <View style={styles.onlineDot} />}
+                {(() => {
+                  const otherId = item.participants?.[0];
+                  const isOnline = (otherId && onlineUsers.has(otherId)) || item.is_online;
+                  return isOnline && <View style={styles.onlineDot} />;
+                })()}
               </View>
               <View style={styles.convInfo}>
                 <View style={styles.convTop}>
