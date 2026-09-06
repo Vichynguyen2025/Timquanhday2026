@@ -63,6 +63,11 @@ router.post('/', authenticate, async (req, res) => {
       like_count: 0, comment_count: 0, share_count: 0, save_count: 0, created_at: new Date()
     }, req.user.id);
 
+    // Parse media JSON string to array for consistent response format
+    if (post && post.media && typeof post.media === 'string') {
+      try { post.media = JSON.parse(post.media); } catch {}
+    }
+
     if (io) {
       io.emit('post:new', post);
     }

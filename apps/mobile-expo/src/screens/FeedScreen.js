@@ -289,7 +289,10 @@ export default function FeedScreen() {
 
   function getMediaArray(post) {
     if (post.media) {
-      try { return typeof post.media === "string" ? JSON.parse(post.media) : post.media; } catch {}
+      try {
+        const arr = typeof post.media === "string" ? JSON.parse(post.media) : post.media;
+        if (Array.isArray(arr)) return arr.filter(i => i?.url);
+      } catch {}
     }
     if (post.image_url) return [{ url: post.image_url }];
     return [];
