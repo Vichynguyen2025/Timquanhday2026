@@ -117,6 +117,80 @@ router.get('/mine', authenticate, async (req, res) => {
   }
 });
 
+// ─── GET /api/sos/helper/profile — Helper profile ──
+router.get('/helper/profile', authenticate, async (req, res) => {
+  try {
+    let profile = await queryOne('SELECT * FROM service_profiles WHERE user_id = ?', [req.user.id]);
+    if (!profile) {
+      return res.json({
+        is_provider: false,
+        is_available: false,
+        service_radius: 1000,
+        categories: [],
+      });
+    }
+    const categories = await query(
+      'SELECT c.id, c.name, c.icon FROM service_profile_categories spc JOIN sos_categories c ON spc.category_id = c.id WHERE spc.profile_id = ? ORDER BY c.sort_order',
+      [profile.id]
+    );
+    res.json({
+      ...profile,
+      categories,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── PUT /api/sos/helper/profile — Update helper profile ──
+router.put('/helper/profile', authenticate, async (req, res) => {
+  try {
+    const { is_provider, is_available, service_radius, category_ids } = req.body;
+
+    if (service_radius !== undefined && !VALID_RADII.includes(service_radius)) {
+      return res.status(400).json({ error: 'Invalid radius' });
+    }
+
+    let profile = await queryOne('SELECT * FROM service_profiles WHERE user_id = ?', [req.user.id]);
+    if (!profile) {
+      const profileId = crypto.randomUUID();
+      await query(
+        'INSERT INTO service_profiles (id, user_id, is_provider, is_available, service_radius) VALUES (?, ?, ?, ?, ?)',
+        [profileId, req.user.id, is_provider !== false, is_available !== false, service_radius || 1000]
+      );
+      profile = await queryOne('SELECT * FROM service_profiles WHERE id = ?', [profileId]);
+    } else {
+      await query(
+        'UPDATE service_profiles SET is_provider = ?, is_available = ?, service_radius = ? WHERE id = ?',
+        [is_provider !== false, is_available !== false, service_radius || 1000, profile.id]
+      );
+    }
+
+    if (category_ids && Array.isArray(category_ids)) {
+      await query('DELETE FROM service_profile_categories WHERE profile_id = ?', [profile.id]);
+      for (const catId of category_ids) {
+        await query(
+          'INSERT INTO service_profile_categories (profile_id, category_id) VALUES (?, ?)',
+          [profile.id, catId]
+        );
+      }
+    }
+
+    const categories = await query(
+      'SELECT c.id, c.name, c.icon FROM service_profile_categories spc JOIN sos_categories c ON spc.category_id = c.id WHERE spc.profile_id = ? ORDER BY c.sort_order',
+      [profile.id]
+    );
+
+    res.json({
+      ...profile,
+      categories,
+    });
+  } catch (err) {
+    console.error('[SOS] Helper profile error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/sos/:id ─────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {
@@ -161,6 +235,16 @@ router.post('/', authenticate, async (req, res) => {
     if (io) {
       io.emit('sos:new', sos);
     }
+
+    // Find matching helpers and notify them
+    findMatchingHelpers(sos).then(helpers => {
+      if (helpers.length > 0) {
+        notifyMatchingHelpers(sos, helpers);
+        console.log(`[SOS] Notified ${helpers.length} helpers for SOS ${id.slice(0, 8)}...`);
+      }
+    }).catch(err => {
+      console.error('[SOS] Matching error:', err);
+    });
 
     res.status(201).json(sos);
   } catch (err) {
@@ -292,4 +376,89 @@ router.post('/:id/cancel', authenticate, async (req, res) => {
   }
 });
 
+// ─── GET /api/sos/helper/profile — Helper profile ──
+router.get('/helper/profile', authenticate, async (req, res) => {
+  try {
+    let profile = await queryOne('SELECT * FROM service_profiles WHERE user_id = ?', [req.user.id]);
+    if (!profile) {
+      return res.json({
+        is_provider: false,
+        is_available: false,
+        service_radius: 1000,
+        categories: [],
+      });
+    }
+    const categories = await query(
+      'SELECT c.id, c.name, c.icon FROM service_profile_categories spc JOIN sos_categories c ON spc.category_id = c.id WHERE spc.profile_id = ? ORDER BY c.sort_order',
+      [profile.id]
+    );
+    res.json({
+      ...profile,
+      categories,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Helper: find matching helpers for a SOS ──────
+async function findMatchingHelpers(sos) {
+  if (!sos || !sos.category_id || !sos.lat || !sos.lng) return [];
+
+  const helpers = await query(`
+    SELECT sp.*, u.name, u.avatar, ul.lat, ul.lng
+    FROM service_profiles sp
+    JOIN users u ON u.id = sp.user_id
+    JOIN user_locations ul ON ul.user_id = sp.user_id
+    JOIN service_profile_categories spc ON spc.profile_id = sp.id
+    WHERE sp.is_provider = 1
+      AND sp.is_available = 1
+      AND spc.category_id = ?
+      AND sp.user_id != ?
+      AND ul.lat IS NOT NULL AND ul.lng IS NOT NULL
+  `, [sos.category_id, sos.user_id]);
+
+  const matched = [];
+  for (const h of helpers) {
+    const dist = haversineDistance(sos.lat, sos.lng, h.lat, h.lng) * 1000; // meters
+    const effectiveRadius = Math.min(sos.radius || 1000, h.service_radius || 1000);
+    if (dist <= effectiveRadius) {
+      matched.push({ ...h, distance: Math.round(dist) });
+    }
+  }
+  return matched;
+}
+
+// ─── Helper: notify matching helpers ──────────────
+async function notifyMatchingHelpers(sos, helpers) {
+  if (!sos.category_name) {
+    const cat = await queryOne('SELECT name FROM sos_categories WHERE id = ?', [sos.category_id]);
+    sos.category_name = cat?.name || 'Hỗ trợ';
+  }
+  for (const h of helpers) {
+    const existing = await queryOne(
+      'SELECT 1 FROM notifications WHERE user_id = ? AND type = ? AND data = ?',
+      [h.user_id, 'sos', JSON.stringify({ sosId: sos.id, matched: true })]
+    );
+    if (existing) continue;
+
+    await createNotification(
+      h.user_id,
+      'sos',
+      '🆘 SOS gần bạn',
+      `${sos.category_name} cách bạn ${h.distance}m`,
+      { sosId: sos.id, matched: true, distance: h.distance }
+    );
+
+    if (io) {
+      io.to('user:' + h.user_id).emit('sos:matched', {
+        sosId: sos.id,
+        distance: h.distance,
+        category: sos.category_name,
+      });
+    }
+  }
+}
+
+export { findMatchingHelpers, notifyMatchingHelpers };
 export default router;

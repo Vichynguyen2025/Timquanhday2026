@@ -344,9 +344,17 @@ export default function SOSScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const mapRef = useRef(null);
+  // Helper registration state
+  const [helperProfile, setHelperProfile] = useState(null);
+  const [showHelperModal, setShowHelperModal] = useState(false);
+  const [helperCategories, setHelperCategories] = useState([]);
+  const [helperRadius, setHelperRadius] = useState(1000);
+  const [helperAvailable, setHelperAvailable] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useFocusEffect(useCallback(() => {
     fetchSOS();
+    fetchHelperProfile();
     getLocation();
     const socket = getSocket();
     if (!socket) return;
@@ -378,6 +386,35 @@ export default function SOSScreen() {
     } catch (e) {}
     setLoading(false);
     setRefreshing(false);
+  }
+
+  async function fetchHelperProfile() {
+    try {
+      const res = await api.get("/sos/helper/profile");
+      const data = res.data;
+      setHelperProfile(data);
+      setHelperCategories(data.categories?.map(c => c.id) || []);
+      setHelperRadius(data.service_radius || 1000);
+      setHelperAvailable(data.is_available !== false);
+    } catch (e) {}
+  }
+
+  async function saveHelperProfile() {
+    try {
+      setSubmitting(true);
+      const res = await api.put("/sos/helper/profile", {
+        is_provider: true,
+        is_available: helperAvailable,
+        service_radius: helperRadius,
+        category_ids: helperCategories,
+      });
+      setHelperProfile(res.data);
+      setShowHelperModal(false);
+      Alert.alert("Đã lưu", "Thông tin hỗ trợ SOS đã được cập nhật.");
+    } catch (e) {
+      Alert.alert("Lỗi", "Không thể lưu thông tin.");
+    }
+    setSubmitting(false);
   }
 
   function goToMyLocation() {
@@ -419,6 +456,32 @@ export default function SOSScreen() {
         <Text style={styles.title}>🆘 SOS</Text>
         <TouchableOpacity onPress={() => setShowCreate(true)} style={styles.headerCreateBtn}>
           <Ionicons name="add" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Helper Registration Card */}
+      <View style={styles.helperCard}>
+        <View style={styles.helperCardLeft}>
+          {helperProfile?.is_provider ? (
+            <>
+              <Text style={styles.helperStatus}>{helperAvailable ? "🟢 Đang nhận SOS" : "⚪ Tạm ngưng"}</Text>
+              <Text style={styles.helperServices} numberOfLines={1}>
+                {helperProfile.categories?.map(c => c.name).join(", ") || "Chưa chọn dịch vụ"}
+              </Text>
+              <Text style={styles.helperRadiusText}>📏 {helperRadius >= 1000 ? `${helperRadius / 1000}km` : `${helperRadius}m`}</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.helperStatus}>🆘 Hỗ trợ SOS</Text>
+              <Text style={styles.helperDesc}>Đăng ký để nhận các yêu cầu hỗ trợ phù hợp gần bạn.</Text>
+            </>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[styles.helperBtn, helperProfile?.is_provider ? styles.helperBtnManage : styles.helperBtnRegister]}
+          onPress={() => setShowHelperModal(true)}
+        >
+          <Text style={[styles.helperBtnText, helperProfile?.is_provider && { color: "#374151" }]}>{helperProfile?.is_provider ? "Quản lý" : "Đăng ký"}</Text>
         </TouchableOpacity>
       </View>
 
@@ -559,6 +622,78 @@ export default function SOSScreen() {
       )}
 
       <CreateSOSModal visible={showCreate} onClose={() => setShowCreate(false)} onSubmit={() => { fetchSOS(); }} />
+
+      {/* Helper Management Modal */}
+      <Modal visible={showHelperModal} transparent animationType="slide" onRequestClose={() => setShowHelperModal(false)}>
+        <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" }}>
+          <View style={[styles.helperSheet, { paddingBottom: insets.bottom }]}>
+            <View style={styles.createHandle} />
+            <View style={styles.createHeader}>
+              <Text style={styles.createTitle}>Hỗ trợ SOS</Text>
+              <TouchableOpacity onPress={() => setShowHelperModal(false)} style={styles.createCloseBtn}>
+                <Ionicons name="close" size={24} color="#000" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+              <Text style={styles.label}>Bạn có thể hỗ trợ gì?</Text>
+              <View style={styles.catRow}>
+                {CATEGORIES.map(c => {
+                  const selected = helperCategories.includes(c.id);
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.catChip, selected && styles.catChipActive]}
+                      onPress={() => {
+                        if (selected) {
+                          setHelperCategories(prev => prev.filter(id => id !== c.id));
+                        } else {
+                          setHelperCategories(prev => [...prev, c.id]);
+                        }
+                      }}
+                    >
+                      <Ionicons name={c.icon} size={18} color={selected ? "#fff" : colors.primary} />
+                      <Text style={[styles.catChipText, selected && styles.catChipTextActive]}>{c.name}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {helperCategories.length === 0 && <Text style={styles.hint}>Chọn ít nhất 1 dịch vụ</Text>}
+
+              <Text style={styles.label}>Bán kính hỗ trợ</Text>
+              <View style={styles.radiusRow}>
+                {RADII.map(r => (
+                  <TouchableOpacity key={r} style={[styles.chip, helperRadius === r && styles.chipActive]} onPress={() => setHelperRadius(r)}>
+                    <Text style={[styles.chipText, helperRadius === r && styles.chipTextActive]}>{r >= 1000 ? `${r / 1000}km` : `${r}m`}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.label}>Trạng thái</Text>
+              <View style={styles.helperStatusRow}>
+                <TouchableOpacity
+                  style={[styles.helperStatusChip, helperAvailable && styles.helperStatusActive]}
+                  onPress={() => setHelperAvailable(true)}
+                >
+                  <Ionicons name="checkmark-circle" size={20} color={helperAvailable ? "#22C55E" : "#9CA3AF"} />
+                  <Text style={[styles.helperStatusChipText, helperAvailable && { color: "#22C55E" }]}>Nhận SOS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.helperStatusChip, !helperAvailable && styles.helperStatusPaused]}
+                  onPress={() => setHelperAvailable(false)}
+                >
+                  <Ionicons name="pause-circle" size={20} color={!helperAvailable ? "#F97316" : "#9CA3AF"} />
+                  <Text style={[styles.helperStatusChipText, !helperAvailable && { color: "#F97316" }]}>Tạm ngưng</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+            <View style={styles.submitWrap}>
+              <TouchableOpacity onPress={saveHelperProfile} disabled={submitting || helperCategories.length === 0} style={[styles.submitBtn, (submitting || helperCategories.length === 0) && { opacity: 0.5 }]}>
+                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>LƯU CÀI ĐẶT</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -618,6 +753,23 @@ const styles = StyleSheet.create({
   ownerBadgeText: { fontSize: 13, color: "#6B7280", fontWeight: "500" },
   retryBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
   retryText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  // Helper card
+  helperCard: { flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginBottom: 8, padding: 14, backgroundColor: "#F0F9FF", borderRadius: 14, borderWidth: 1, borderColor: "#BFDBFE" },
+  helperCardLeft: { flex: 1, marginRight: 12 },
+  helperStatus: { fontSize: 14, fontWeight: "700", color: "#111827", marginBottom: 2 },
+  helperDesc: { fontSize: 12, color: "#6B7280", lineHeight: 16, marginTop: 2 },
+  helperServices: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  helperRadiusText: { fontSize: 12, color: "#6B7280", marginTop: 1 },
+  helperBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  helperBtnRegister: { backgroundColor: colors.primary },
+  helperBtnManage: { backgroundColor: "#F3F4F6", borderWidth: 1, borderColor: "#D1D5DB" },
+  helperBtnText: { fontSize: 13, fontWeight: "600", color: "#fff" },
+  helperSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "80%" },
+  helperStatusRow: { flexDirection: "row", gap: 12, marginBottom: 8 },
+  helperStatusChip: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: "#E5E7EB", backgroundColor: "#F9FAFB", gap: 8 },
+  helperStatusActive: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
+  helperStatusPaused: { borderColor: "#F97316", backgroundColor: "#FFF7ED" },
+  helperStatusChipText: { fontSize: 14, fontWeight: "600", color: "#6B7280" },
   // Create SOS
   createSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1, maxHeight: "92%" },
   createHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginTop: 10, marginBottom: 4 },
