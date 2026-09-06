@@ -1,0 +1,116 @@
+name: Build & Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install API deps
+        run: npm ci
+        working-directory: apps/api
+
+      - name: Install Web deps
+        run: npm ci
+        working-directory: apps/web
+
+      - name: Build Web
+        run: npm run build
+        working-directory: apps/web
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: apps/web/dist/
+
+  deploy-staging:
+    name: Deploy Staging
+    if: ${{ github.event.inputs.environment == 'staging' }}
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: apps/web/dist
+
+      - name: Deploy to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "apps/api,apps/web/dist,package.json,ecosystem.config.js"
+          target: "/opt/timquanhday/staging"
+          strip_components: 0
+
+      - name: Restart Staging
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/timquanhday/staging/apps/api && npm ci 2>/dev/null
+            pm2 start ecosystem.config.js --only tqd-staging 2>/dev/null || true
+            pm2 save
+
+  deploy-production:
+    name: Deploy Production
+    if: ${{ github.event.inputs.environment == 'production' }}
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: apps/web/dist
+
+      - name: Deploy to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "apps/api,apps/web/dist,package.json,ecosystem.config.js"
+          target: "/opt/timquanhday"
+          strip_components: 0
+
+      - name: Restart Production
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          port: ${{ secrets.VPS_PORT }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/timquanhday/apps/api && npm ci 2>/dev/null
+            pm2 start ecosystem.config.js --only tqd-api 2>/dev/null || true
+            pm2 save
