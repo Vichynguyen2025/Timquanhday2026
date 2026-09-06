@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Modal, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Modal, Alert, Keyboard } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -20,6 +20,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   const { user } = useAuth();
   const { onlineUsers } = useSocket();
   const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,14 @@ export default function ChatDetailScreen({ route, navigation }) {
       if (other) { setReceiverId(other.id); setOtherUser(other); }
     }).catch(() => {});
 
+    // Keyboard listeners
+    const showSub = Keyboard.addListener("keyboardWillShow", (e) => {
+      setKeyboardVisible(true);
+    });
+    const hideSub = Keyboard.addListener("keyboardWillHide", () => {
+      setKeyboardVisible(false);
+    });
+
     const socket = getSocket();
     if (socket) {
       socket.emit("conversation:join", { conversationId });
@@ -73,6 +82,8 @@ export default function ChatDetailScreen({ route, navigation }) {
       socket.on("message:reaction", onReact); socket.on("user:typing", onType);
       socket.on("user:stop-typing", onStop);
       return () => {
+        showSub.remove();
+        hideSub.remove();
         socket.off("message:new", onMsg); socket.off("message:deleted", onDel);
         socket.off("message:reaction", onReact); socket.off("user:typing", onType);
         socket.off("user:stop-typing", onStop);
@@ -445,9 +456,11 @@ export default function ChatDetailScreen({ route, navigation }) {
         <View style={styles.previewBar}>
           {previewUrl ? (
             <>
-              <Image source={{ uri: previewUrl }} style={styles.previewImage} />
+              <Image source={{ uri: previewUrl }} style={styles.previewImage}
+                onError={(e) => console.log("Preview error:", e.nativeEvent?.error)}
+              />
               <View style={styles.previewInfo}>
-                <Text style={styles.previewName} numberOfLines={1}>{selectedImage?.fileName || "Ảnh"}</Text>
+                <Text style={styles.previewName} numberOfLines={1}>{selectedImage?.fileName || selectedImage?.name || "Ảnh"}</Text>
                 <Text style={styles.previewSize}>Sẵn sàng gửi</Text>
               </View>
             </>
@@ -499,8 +512,8 @@ export default function ChatDetailScreen({ route, navigation }) {
         </View>
       )}
 
-      {/* Input bar — NO extra bottom padding, KeyboardAvoidingView handles it */}
-      <View style={styles.inputBar}>
+      {/* Input bar — safe area when closed, no gap when open */}
+      <View style={[styles.inputBar, keyboardVisible ? {} : { paddingBottom: insets.bottom }]}>
         <TouchableOpacity onPress={() => setShowEmoji(!showEmoji)} style={styles.inputBtn}>
           <Ionicons name={showEmoji ? "keypad" : "happy-outline"} size={24} color={colors.primary} />
         </TouchableOpacity>
