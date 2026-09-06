@@ -115,8 +115,28 @@ export function setupSocket(io) {
         // Update conversation last message
         await query('UPDATE conversations SET last_message = ?, last_message_at = NOW() WHERE id = ?', [content || '📷 Ảnh', conversationId]);
 
-        // ACK sender with real message ID — sender does NOT get message:new
-        ackFn({ success: true, messageId, tempId });
+        // ACK sender with full message object
+        console.log(`[SEND] tempId=${tempId} messageId=${messageId} receiverId=${receiverId}`);
+        ackFn({
+          success: true,
+          messageId,
+          tempId,
+          message: {
+            id: messageId,
+            conversation_id: conversationId,
+            sender_id: userId,
+            content: content || '',
+            type: msgType,
+            metadata: metadata ? JSON.parse(metadata) : null,
+            reply_to_id: replyToId || null,
+            is_deleted: false,
+            created_at: message.created_at,
+            sender_name: message.sender_name,
+            sender_avatar: message.sender_avatar,
+            client_temp_id: tempId || null,
+            status: 'sent',
+          },
+        });
       } catch (err) {
         console.error('[Socket] message:send error:', err);
         ackFn({ success: false, error: 'Internal server error', tempId: data?.tempId });

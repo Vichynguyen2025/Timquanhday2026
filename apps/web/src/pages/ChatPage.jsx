@@ -39,14 +39,15 @@ function mergeIncomingMessage(messages, incoming) {
   // Step 1: Try matching by server ID
   const byId = messages.find(m => m.id === incoming.id);
   if (byId) {
-    return messages.map(m => m.id === incoming.id ? { ...m, ...incoming } : m);
+    return messages.map(m => m.id === incoming.id ? { ...m, ...incoming, status: incoming.status || m.status } : m);
   }
 
   // Step 2: Try matching by client_temp_id
   if (incoming.client_temp_id) {
     const byTempId = messages.find(m => m.client_temp_id === incoming.client_temp_id);
     if (byTempId) {
-      return messages.map(m => m.client_temp_id === incoming.client_temp_id ? { ...incoming, status: 'sent' } : m);
+      // Merge incoming fields into existing message — preserve all optimistic fields
+      return messages.map(m => m.client_temp_id === incoming.client_temp_id ? { ...byTempId, ...incoming, id: incoming.id || byTempId.id, status: 'sent' } : m);
     }
   }
 
@@ -265,15 +266,34 @@ export default function ChatPage() {
       replyToId: replyTo?.id || null,
       tempId,
     }, (response) => {
-      // ACK: reconcile the temp message — DO NOT add new message
-      if (response?.success) {
+      // ACK: reconcile the temp message
+      if (response?.success && response?.message) {
+        // Full server message available — use it
+        setMessages(prev => mergeIncomingMessage(prev, {
+          ...response.message,
+          id: response.messageId,
+          client_temp_id: tempId,
+          status: 'sent',
+        }));
+        // Update conversation list for sender (no message:new sent to sender)
+        setConversations(prev => prev.map(c => {
+          if (c.id === activeConvId) {
+            return {
+              ...c,
+              last_message: response.message.content || (response.message.type === 'image' ? '📷 Ảnh' : ''),
+              last_message_at: response.message.created_at,
+            };
+          }
+          return c;
+        }));
+      } else if (response?.success) {
+        // Fallback: only messageId returned
         setMessages(prev => mergeIncomingMessage(prev, {
           id: response.messageId,
           client_temp_id: tempId,
           status: 'sent',
         }));
       } else if (response?.duplicate) {
-        // Already exists, remove temp
         setMessages(prev => prev.filter(m => m.id !== tempId));
       } else {
         setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
