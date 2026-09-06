@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import API from '../services/api';
@@ -34,28 +34,23 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-// ─── mergeIncomingMessage: single source of truth for merging ───
+// ─── mergeIncomingMessage ──────────────────────────────
 function mergeIncomingMessage(messages, incoming) {
-  // Step 1: Try matching by server ID
   const byId = messages.find(m => m.id === incoming.id);
   if (byId) {
     return messages.map(m => m.id === incoming.id ? { ...m, ...incoming, status: incoming.status || m.status } : m);
   }
-
-  // Step 2: Try matching by client_temp_id
   if (incoming.client_temp_id) {
     const byTempId = messages.find(m => m.client_temp_id === incoming.client_temp_id);
     if (byTempId) {
-      // Merge incoming fields into existing message — preserve all optimistic fields
-      return messages.map(m => m.client_temp_id === incoming.client_temp_id ? { ...byTempId, ...incoming, id: incoming.id || byTempId.id, status: 'sent' } : m);
+      return messages.map(m => m.client_temp_id === incoming.client_temp_id
+        ? { ...byTempId, ...incoming, id: incoming.id || byTempId.id, status: 'sent' }
+        : m);
     }
   }
-
-  // Step 3: Not found — append
   return [...messages, incoming];
 }
 
-// ─── Upload Image ───────────────────────────────────────
 async function uploadImage(file) {
   const formData = new FormData();
   formData.append('image', file);
@@ -70,29 +65,44 @@ async function uploadImage(file) {
 }
 
 export default function ChatPage() {
-  const { id: activeConvId } = useParams();
+  const params = useParams();
+  const navigate = useNavigate();
+  const activeConvId = params.id || null;
   const { user } = useAuth();
   const { socket, onlineUsers } = useSocket();
+
+  // ─── Persisted state (survives conversation switches) ─────
   const [conversations, setConversations] = useState([]);
-  const [messages, setMessages] = useState([]);
-  const [text, setText] = useState('');
   const [typing, setTyping] = useState({});
   const [search, setSearch] = useState('');
-  const [replyTo, setReplyTo] = useState(null);
-  const [showEmoji, setShowEmoji] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [convDetail, setConvDetail] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [convLoading, setConvLoading] = useState(false);
+
+  // ─── Ephemeral state (reset per switch) ──────────────────
+  const [text, setText] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
+  const [showEmoji, setShowEmoji] = useState(null);
   const [newMsgIndicator, setNewMsgIndicator] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
+
+  // ─── Refs (survive renders, survive switches) ────────────
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const fileInputRef = useRef(null);
   const typingTimerRef = useRef(null);
   const isNearBottomRef = useRef(true);
+
+  // In-memory caches
+  const messagesCacheRef = useRef(new Map());   // convId -> messages[]
+  const detailCacheRef = useRef(new Map());     // convId -> detail
+  const hasMoreCacheRef = useRef(new Map());    // convId -> boolean
+  const prevConvRef = useRef(null);
 
   // ─── Helpers ───────────────────────────────────────
   const scrollToBottom = useCallback((smooth = true) => {
@@ -110,18 +120,23 @@ export default function ChatPage() {
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
     if (isNearBottomRef.current) setNewMsgIndicator(false);
 
-    if (el.scrollTop < 50 && hasMore && !loadingMore && messages.length > 0) {
+    if (el.scrollTop < 50 && hasMore && !loadingMore && messages.length > 0 && activeConvId) {
       setLoadingMore(true);
       const oldestMsg = messages[0];
       API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}&before=${oldestMsg.created_at}`)
         .then(({ data }) => {
-          if (data.length < MESSAGES_PER_PAGE) setHasMore(false);
-          // Merge without dups
+          const done = data.length < MESSAGES_PER_PAGE;
+          if (done) {
+            hasMoreCacheRef.current.set(activeConvId, false);
+            setHasMore(false);
+          }
           setMessages(prev => {
             const merged = [...data];
             for (const m of prev) {
               if (!merged.find(x => x.id === m.id)) merged.push(m);
             }
+            // Update cache
+            messagesCacheRef.current.set(activeConvId, merged);
             return merged;
           });
           const prevHeight = el.scrollHeight;
@@ -135,55 +150,104 @@ export default function ChatPage() {
   // ─── Fetch conversations ─────────────────────────
   useEffect(() => {
     API.get('/conversations').then(({ data }) => setConversations(data)).catch(() => {});
-  }, [activeConvId]);
+  }, []);
 
-  // ─── Fetch messages + join room ─────────────────
+  // ─── Switch conversation handler ─────────────────
+  const switchConversation = useCallback((convId) => {
+    if (convId === activeConvId) return;
+    navigate(`/chat/${convId}`, { replace: false });
+  }, [activeConvId, navigate]);
+
+  // ─── Conversation switch effect ──────────────────
+  // This runs when activeConvId changes — NO reload, NO window.location
   useEffect(() => {
-    if (activeConvId) {
+    // Leave previous room
+    if (prevConvRef.current && prevConvRef.current !== activeConvId) {
+      socket?.emit('conversation:leave', { conversationId: prevConvRef.current });
+    }
+    prevConvRef.current = activeConvId;
+    if (!activeConvId) return;
+
+    // Clear ephemeral state
+    setReplyTo(null);
+    setShowEmoji(null);
+    setNewMsgIndicator(false);
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setText('');
+
+    // Load from cache instantly
+    if (messagesCacheRef.current.has(activeConvId)) {
+      const cached = messagesCacheRef.current.get(activeConvId);
+      setMessages(cached);
+      setHasMore(hasMoreCacheRef.current.get(activeConvId) !== false);
+      scrollToBottom(false);
+    } else {
+      // No cache — show loading, fetch
       setMessages([]);
       setHasMore(true);
-      setLoadingMore(false);
-      setNewMsgIndicator(false);
-
-      API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}`)
-        .then(({ data }) => {
-          if (data.length < MESSAGES_PER_PAGE) setHasMore(false);
-          setMessages(data);
-          scrollToBottom(false);
-        }).catch(() => {});
-
-      API.get(`/conversations/${activeConvId}`).then(({ data }) => setConvDetail(data)).catch(() => {});
-
-      socket?.emit('conversation:join', { conversationId: activeConvId });
-      // Clear unread immediately
-      setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, unread_count: 0 } : c));
-
-      return () => {
-        socket?.emit('conversation:leave', { conversationId: activeConvId });
-      };
+      setConvLoading(true);
     }
+
+    if (detailCacheRef.current.has(activeConvId)) {
+      setConvDetail(detailCacheRef.current.get(activeConvId));
+    } else {
+      setConvDetail(null);
+    }
+
+    // Join conversation room
+    socket?.emit('conversation:join', { conversationId: activeConvId });
+
+    // Clear unread immediately
+    setConversations(prev => prev.map(c => c.id === activeConvId ? { ...c, unread_count: 0 } : c));
+
+    // Background fetch (always refresh)
+    API.get(`/messages/${activeConvId}?limit=${MESSAGES_PER_PAGE}`)
+      .then(({ data }) => {
+        const done = data.length < MESSAGES_PER_PAGE;
+        hasMoreCacheRef.current.set(activeConvId, !done);
+        messagesCacheRef.current.set(activeConvId, data);
+        setMessages(data);
+        setHasMore(!done);
+        setConvLoading(false);
+        scrollToBottom(false);
+      }).catch(() => setConvLoading(false));
+
+    API.get(`/conversations/${activeConvId}`).then(({ data }) => {
+      detailCacheRef.current.set(activeConvId, data);
+      setConvDetail(data);
+    }).catch(() => {});
+
+    return () => {};
   }, [activeConvId, socket, scrollToBottom]);
 
   // ─── Socket events ─────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    // message:new — ONLY for other participants, not sender (sender gets ACK)
     socket.on('message:new', (msg) => {
-      // Skip own messages — sender already has optimistic + ACK
       if (msg.sender_id === user?.id) return;
 
-      // Merge into current conversation messages
+      // Update cache AND UI for active conversation
       if (msg.conversation_id === activeConvId) {
-        setMessages(prev => mergeIncomingMessage(prev, msg));
+        setMessages(prev => {
+          const updated = mergeIncomingMessage(prev, msg);
+          messagesCacheRef.current.set(msg.conversation_id, updated);
+          return updated;
+        });
         if (isNearBottomRef.current) {
           scrollToBottom(true);
         } else {
           setNewMsgIndicator(true);
         }
+      } else if (messagesCacheRef.current.has(msg.conversation_id)) {
+        // Update cache even for inactive conversations
+        const cached = messagesCacheRef.current.get(msg.conversation_id);
+        const updated = mergeIncomingMessage(cached, msg);
+        messagesCacheRef.current.set(msg.conversation_id, updated);
       }
 
-      // Update conversation list and unread counter
+      // Update conversation list
       setConversations(prev => {
         const updated = prev.map(c => {
           if (c.id === msg.conversation_id) {
@@ -192,7 +256,6 @@ export default function ChatPage() {
               ...c,
               last_message: msg.content || (msg.type === 'image' ? '📷 Ảnh' : msg.content),
               last_message_at: msg.created_at,
-              // Only increment unread if not the active conversation
               unread_count: isActive ? 0 : (c.unread_count || 0) + 1,
             };
           }
@@ -206,12 +269,22 @@ export default function ChatPage() {
       });
     });
 
-    socket.on('message:deleted', ({ messageId }) => {
-      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, is_deleted: true, content: 'Tin nhắn đã được thu hồi' } : m));
+    socket.on('message:deleted', ({ messageId, conversationId }) => {
+      const updater = (msgs) => msgs.map(m => m.id === messageId ? { ...m, is_deleted: true, content: 'Tin nhắn đã được thu hồi' } : m);
+      setMessages(prev => {
+        const updated = updater(prev);
+        if (conversationId) messagesCacheRef.current.set(conversationId, updated);
+        return updated;
+      });
     });
 
-    socket.on('message:reaction', ({ messageId, reactions }) => {
-      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, reactions } : m));
+    socket.on('message:reaction', ({ messageId, conversationId, reactions }) => {
+      const updater = (msgs) => msgs.map(m => m.id === messageId ? { ...m, reactions } : m);
+      setMessages(prev => {
+        const updated = updater(prev);
+        if (conversationId) messagesCacheRef.current.set(conversationId, updated);
+        return updated;
+      });
     });
 
     socket.on('user:typing', ({ conversationId, userId: uId }) => {
@@ -239,64 +312,53 @@ export default function ChatPage() {
     const receiverId = convDetail?.members?.find(m => m.id !== user?.id)?.id;
 
     const optimisticMsg = {
-      id: tempId,
-      conversation_id: activeConvId,
-      sender_id: user?.id,
-      content: text.trim(),
-      type: 'text',
-      reply_to_id: replyTo?.id || null,
-      is_deleted: false,
-      reactions: [],
+      id: tempId, conversation_id: activeConvId, sender_id: user?.id, content: text.trim(),
+      type: 'text', reply_to_id: replyTo?.id || null, is_deleted: false, reactions: [],
       reply_preview: replyTo ? { id: replyTo.id, content: replyTo.content, sender_id: replyTo.sender_id, is_deleted: false } : null,
-      created_at: new Date().toISOString(),
-      sender_name: user?.name || 'You',
-      sender_avatar: null,
-      status: 'sending',
-      client_temp_id: tempId,
+      created_at: new Date().toISOString(), sender_name: user?.name || 'You', sender_avatar: null,
+      status: 'sending', client_temp_id: tempId,
     };
 
-    setMessages(prev => [...prev, optimisticMsg]);
+    const addOptimistic = (prev) => {
+      const updated = [...prev, optimisticMsg];
+      messagesCacheRef.current.set(activeConvId, updated);
+      return updated;
+    };
+    setMessages(addOptimistic);
     scrollToBottom(true);
 
     socket?.emit('message:send', {
-      conversationId: activeConvId,
-      content: text.trim(),
-      type: 'text',
-      receiverId,
-      replyToId: replyTo?.id || null,
-      tempId,
+      conversationId: activeConvId, content: text.trim(), type: 'text', receiverId,
+      replyToId: replyTo?.id || null, tempId,
     }, (response) => {
-      // ACK: reconcile the temp message
       if (response?.success && response?.message) {
-        // Full server message available — use it
-        setMessages(prev => mergeIncomingMessage(prev, {
-          ...response.message,
-          id: response.messageId,
-          client_temp_id: tempId,
-          status: 'sent',
-        }));
-        // Update conversation list for sender (no message:new sent to sender)
-        setConversations(prev => prev.map(c => {
-          if (c.id === activeConvId) {
-            return {
-              ...c,
-              last_message: response.message.content || (response.message.type === 'image' ? '📷 Ảnh' : ''),
-              last_message_at: response.message.created_at,
-            };
-          }
-          return c;
-        }));
+        const reconcile = (prev) => {
+          const updated = mergeIncomingMessage(prev, { ...response.message, id: response.messageId, client_temp_id: tempId, status: 'sent' });
+          messagesCacheRef.current.set(activeConvId, updated);
+          return updated;
+        };
+        setMessages(reconcile);
+        setConversations(prev => prev.map(c =>
+          c.id === activeConvId ? { ...c, last_message: response.message.content || (response.message.type === 'image' ? '📷 Ảnh' : ''), last_message_at: response.message.created_at } : c
+        ));
       } else if (response?.success) {
-        // Fallback: only messageId returned
-        setMessages(prev => mergeIncomingMessage(prev, {
-          id: response.messageId,
-          client_temp_id: tempId,
-          status: 'sent',
-        }));
+        setMessages(prev => {
+          const updated = mergeIncomingMessage(prev, { id: response.messageId, client_temp_id: tempId, status: 'sent' });
+          messagesCacheRef.current.set(activeConvId, updated);
+          return updated;
+        });
       } else if (response?.duplicate) {
-        setMessages(prev => prev.filter(m => m.id !== tempId));
+        setMessages(prev => {
+          const updated = prev.filter(m => m.id !== tempId);
+          messagesCacheRef.current.set(activeConvId, updated);
+          return updated;
+        });
       } else {
-        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+        setMessages(prev => {
+          const updated = prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m);
+          messagesCacheRef.current.set(activeConvId, updated);
+          return updated;
+        });
       }
     });
 
@@ -310,62 +372,63 @@ export default function ChatPage() {
   const sendImageMessage = async () => {
     if (!selectedFile || !activeConvId || uploading) return;
     setUploading(true);
-
     const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const receiverId = convDetail?.members?.find(m => m.id !== user?.id)?.id;
 
     const optimisticMsg = {
-      id: tempId,
-      conversation_id: activeConvId,
-      sender_id: user?.id,
-      content: '',
-      type: 'image',
-      metadata: { attachmentUrl: previewUrl, attachmentName: selectedFile.name, attachmentSize: selectedFile.size },
-      reply_to_id: null,
-      is_deleted: false,
-      reactions: [],
-      reply_preview: null,
-      created_at: new Date().toISOString(),
-      sender_name: user?.name || 'You',
-      sender_avatar: null,
-      status: 'uploading',
-      client_temp_id: tempId,
+      id: tempId, conversation_id: activeConvId, sender_id: user?.id, content: '',
+      type: 'image', metadata: { attachmentUrl: previewUrl, attachmentName: selectedFile.name, attachmentSize: selectedFile.size },
+      reply_to_id: null, is_deleted: false, reactions: [], reply_preview: null,
+      created_at: new Date().toISOString(), sender_name: user?.name || 'You', sender_avatar: null,
+      status: 'uploading', client_temp_id: tempId,
     };
 
-    setMessages(prev => [...prev, optimisticMsg]);
+    setMessages(prev => {
+      const updated = [...prev, optimisticMsg];
+      messagesCacheRef.current.set(activeConvId, updated);
+      return updated;
+    });
     scrollToBottom(true);
 
     try {
       const result = await uploadImage(selectedFile);
-      // Upload done, now send via socket
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sending', metadata: { ...m.metadata, attachmentUrl: result.url } } : m));
+      setMessages(prev => {
+        const updated = prev.map(m => m.id === tempId ? { ...m, status: 'sending', metadata: { ...m.metadata, attachmentUrl: result.url } } : m);
+        messagesCacheRef.current.set(activeConvId, updated);
+        return updated;
+      });
 
       socket?.emit('message:send', {
-        conversationId: activeConvId,
-        content: '',
-        type: 'image',
-        receiverId,
-        tempId,
-        attachmentUrl: result.url,
-        attachmentName: result.filename,
-        attachmentSize: result.size,
+        conversationId: activeConvId, content: '', type: 'image', receiverId, tempId,
+        attachmentUrl: result.url, attachmentName: result.filename, attachmentSize: result.size,
       }, (response) => {
         if (response?.success) {
-          setMessages(prev => mergeIncomingMessage(prev, {
-            id: response.messageId,
-            client_temp_id: tempId,
-            status: 'sent',
-          }));
+          setMessages(prev => {
+            const updated = mergeIncomingMessage(prev, { id: response.messageId, client_temp_id: tempId, status: 'sent' });
+            messagesCacheRef.current.set(activeConvId, updated);
+            return updated;
+          });
         } else if (response?.duplicate) {
-          setMessages(prev => prev.filter(m => m.id !== tempId));
+          setMessages(prev => {
+            const updated = prev.filter(m => m.id !== tempId);
+            messagesCacheRef.current.set(activeConvId, updated);
+            return updated;
+          });
         } else {
-          setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+          setMessages(prev => {
+            const updated = prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m);
+            messagesCacheRef.current.set(activeConvId, updated);
+            return updated;
+          });
         }
       });
     } catch (err) {
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
+      setMessages(prev => {
+        const updated = prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m);
+        messagesCacheRef.current.set(activeConvId, updated);
+        return updated;
+      });
     }
-
     setUploading(false);
     setSelectedFile(null);
     setPreviewUrl(null);
@@ -404,7 +467,6 @@ export default function ChatPage() {
     setPreviewUrl(null);
   };
 
-  // ─── Message actions ──────────────────────────
   const deleteMessage = (msgId) => {
     socket?.emit('message:delete', { messageId: msgId, conversationId: activeConvId });
   };
@@ -416,17 +478,20 @@ export default function ChatPage() {
 
   const retryMessage = (msg) => {
     if (msg.type === 'image' && msg.status === 'failed') {
-      // Re-select through file input
-      setMessages(prev => prev.filter(m => m.id !== msg.id));
+      setMessages(prev => {
+        const updated = prev.filter(m => m.id !== msg.id);
+        messagesCacheRef.current.set(activeConvId, updated);
+        return updated;
+      });
     } else if (msg.id?.startsWith('temp_')) {
-      setMessages(prev => prev.filter(m => m.id !== msg.id));
+      setMessages(prev => {
+        const updated = prev.filter(m => m.id !== msg.id);
+        messagesCacheRef.current.set(activeConvId, updated);
+        return updated;
+      });
       setText(msg.content);
       if (msg.reply_to_id) setReplyTo({ id: msg.reply_to_id, content: msg.reply_preview?.content || '', sender_id: msg.reply_preview?.sender_id || '' });
     }
-  };
-
-  const selectConversation = (convId) => {
-    window.location.href = `/chat/${convId}`;
   };
 
   const filteredConv = conversations.filter(c =>
@@ -477,7 +542,7 @@ export default function ChatPage() {
           ) : filteredConv.map(c => {
             const isActive = c.id === activeConvId;
             return (
-              <button key={c.id} onClick={() => selectConversation(c.id)}
+              <button key={c.id} onClick={() => switchConversation(c.id)}
                 className={`w-full flex items-center gap-3 p-3.5 hover:bg-gray-50 transition-colors border-b border-gray-50 text-left ${
                   isActive ? 'bg-primary-50 border-l-4 border-l-primary-500' : ''
                 }`}>
@@ -513,9 +578,8 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {activeConvId ? (
           <>
-            {/* Header */}
             <div className="px-4 py-3 border-b border-gray-200 bg-white flex items-center gap-3 flex-shrink-0">
-              <button onClick={() => window.location.href = '/chat'} className="lg:hidden p-1 -ml-1 hover:bg-gray-100 rounded-lg"><FiArrowLeft size={22} /></button>
+              <button onClick={() => navigate('/chat')} className="lg:hidden p-1 -ml-1 hover:bg-gray-100 rounded-lg"><FiArrowLeft size={22} /></button>
               <div className="relative flex-shrink-0">
                 <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
                   <span className="text-primary-600 font-bold text-sm">{(otherUser?.name || '?')[0]?.toUpperCase()}</span>
@@ -530,8 +594,12 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 bg-gray-50" ref={messagesContainerRef} onScroll={handleScroll}>
+              {convLoading && messages.length === 0 && (
+                <div className="flex justify-center py-12">
+                  <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
               {loadingMore && <div className="flex justify-center py-3"><div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" /></div>}
               {!hasMore && messages.length > 0 && (
                 <div className="flex justify-center mb-3"><span className="text-[11px] text-gray-400">— Đã xem tất cả tin nhắn —</span></div>
@@ -570,13 +638,9 @@ export default function ChatPage() {
                                   onClick={() => setLightboxUrl(attachmentUrl)}
                                   onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                                 />
-                                <div className="hidden items-center justify-center bg-gray-100 rounded-xl h-32 text-gray-400 text-xs">
-                                  Không thể tải ảnh
-                                </div>
+                                <div className="hidden items-center justify-center bg-gray-100 rounded-xl h-32 text-gray-400 text-xs">Không thể tải ảnh</div>
                               </div>
-                            ) : (
-                              msg.content
-                            )}
+                            ) : (msg.content)}
                             <div className={`text-[10px] mt-1 flex items-center gap-1 ${isMine ? 'text-primary-200 justify-end' : 'text-gray-400 justify-start'}`}>
                               {msg.created_at ? formatTime(msg.created_at) : ''}
                               {isMine && !msg.is_deleted && statusIcon(msg.status)}
@@ -622,7 +686,13 @@ export default function ChatPage() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Image preview */}
+            {newMsgIndicator && (
+              <button onClick={() => scrollToBottom(true)}
+                className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-primary-500 text-white text-xs px-4 py-1.5 rounded-full shadow-lg hover:bg-primary-600 transition-all animate-bounce z-10">
+                Tin nhắn mới ↓
+              </button>
+            )}
+
             {previewUrl && (
               <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
                 <div className="relative inline-block max-w-[300px]">
@@ -639,13 +709,6 @@ export default function ChatPage() {
               </div>
             )}
 
-            {newMsgIndicator && (
-              <button onClick={() => scrollToBottom(true)}
-                className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-primary-500 text-white text-xs px-4 py-1.5 rounded-full shadow-lg hover:bg-primary-600 transition-all animate-bounce z-10">
-                Tin nhắn mới ↓
-              </button>
-            )}
-
             {replyTo && (
               <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
                 <FiCornerUpLeft size={14} className="text-primary-500" />
@@ -660,9 +723,7 @@ export default function ChatPage() {
             <form onSubmit={sendMessage} className="p-4 bg-white border-t border-gray-200">
               <div className="flex items-end gap-3">
                 <button type="button" onClick={() => fileInputRef.current?.click()}
-                  className="text-gray-400 hover:text-primary-500 p-2 hover:bg-gray-100 rounded-xl transition-colors" title="Đính kèm ảnh">
-                  <FiImage size={20} />
-                </button>
+                  className="text-gray-400 hover:text-primary-500 p-2 hover:bg-gray-100 rounded-xl transition-colors" title="Đính kèm ảnh"><FiImage size={20} /></button>
                 <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelect} />
                 <div className="flex-1 relative">
                   <textarea value={text} onChange={e => handleTyping(e.target.value)} onKeyDown={handleKeyDown} rows={1}
@@ -731,14 +792,11 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* Image Lightbox */}
       {lightboxUrl && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setLightboxUrl(null)}>
           <button onClick={() => setLightboxUrl(null)}
-            className="absolute top-4 right-4 text-white/70 hover:text-white p-2 transition-colors">
-            <FiX size={28} />
-          </button>
+            className="absolute top-4 right-4 text-white/70 hover:text-white p-2 transition-colors"><FiX size={28} /></button>
           <img src={lightboxUrl} alt="Full size"
             className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
             onClick={(e) => e.stopPropagation()} />
