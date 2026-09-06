@@ -7,6 +7,7 @@ const SocketContext = createContext(null);
 
 export function SocketProvider({ children }) {
   const { user, loading } = useAuth();
+  const isLoggedIn = !!user;
 
   // Auto-connect socket when user is logged in
   useEffect(() => {
