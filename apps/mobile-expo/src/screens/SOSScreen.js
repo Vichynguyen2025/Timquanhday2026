@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Image, Modal, Alert, TextInput, Platform, KeyboardAvoidingView, ScrollView } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Image, Modal, Alert, TextInput, Platform, KeyboardAvoidingView, ScrollView, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,8 @@ const URGENCIES = [
   { value: "SCHEDULED", label: "Có thể hẹn", color: "#22C55E", icon: "calendar-outline" },
 ];
 
+const SCREEN_WIDTH = Dimensions.get("window").width;
+
 function formatTime(d) {
   if (!d) return "";
   const diff = Date.now() - new Date(d).getTime();
@@ -48,9 +50,54 @@ function formatDistance(m) {
   return `${(m / 1000).toFixed(1)} km`;
 }
 
+// ─── Fullscreen Image Viewer ──────────────────────
+function ImageViewer({ visible, images, initialIndex, onClose }) {
+  const flatRef = useRef(null);
+  const [idx, setIdx] = useState(initialIndex || 0);
+  useEffect(() => { setIdx(initialIndex || 0); }, [initialIndex, visible]);
+  useEffect(() => {
+    if (visible && flatRef.current && idx != null) {
+      setTimeout(() => flatRef.current?.scrollToIndex({ index: idx, animated: false }), 100);
+    }
+  }, [visible, idx]);
+
+  return (
+    <Modal visible={visible} transparent onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: "#000" }}>
+        <TouchableOpacity onPress={onClose} style={{ position: "absolute", top: 50, right: 20, zIndex: 10, padding: 8 }}>
+          <Ionicons name="close" size={28} color="#fff" />
+        </TouchableOpacity>
+        {images?.length > 0 && (
+          <>
+            <FlatList
+              ref={flatRef}
+              data={images}
+              horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+              keyExtractor={(_, i) => String(i)}
+              onMomentumScrollEnd={(e) => { const i = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH); setIdx(i); }}
+              renderItem={({ item }) => (
+                <View style={{ width: SCREEN_WIDTH, height: "100%", justifyContent: "center", alignItems: "center" }}>
+                  <Image source={{ uri: item.url }} style={{ width: SCREEN_WIDTH, height: undefined, aspectRatio: 1 }} resizeMode="contain" />
+                </View>
+              )}
+            />
+            <View style={{ position: "absolute", bottom: 60, alignSelf: "center", backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16 }}>
+              <Text style={{ color: "#fff", fontSize: 15, fontWeight: "600" }}>{idx + 1} / {images.length}</Text>
+            </View>
+          </>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 // ─── SOS Card ─────────────────────────────────────
 function SOSCard({ item, onRespond, onPress, isOwner }) {
   const urgencyConfig = URGENCIES.find(u => u.value === item.urgency) || URGENCIES[1];
+  const mediaItems = item.media || [];
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIdx, setViewerIdx] = useState(0);
+
   return (
     <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => onPress?.(item)}>
       <View style={styles.cardHeader}>
@@ -83,14 +130,23 @@ function SOSCard({ item, onRespond, onPress, isOwner }) {
         )}
       </View>
 
-      {item.media?.length > 0 && (
+      {/* Media thumbnails — clickable */}
+      {mediaItems.length > 0 && (
         <View style={styles.cardMediaRow}>
-          {item.media.slice(0, 3).map((m, i) => (
-            <Image key={i} source={{ uri: m.url }} style={styles.cardMediaThumb} />
+          {mediaItems.slice(0, 3).map((m, i) => (
+            <TouchableOpacity key={i} onPress={() => { setViewerIdx(i); setViewerVisible(true); }}>
+              <Image source={{ uri: m.url }} style={styles.cardMediaThumb} />
+            </TouchableOpacity>
           ))}
-          {item.media.length > 3 && <Text style={styles.cardMediaMore}>+{item.media.length - 3}</Text>}
+          {mediaItems.length > 3 && (
+            <TouchableOpacity onPress={() => { setViewerIdx(3); setViewerVisible(true); }} style={{ justifyContent: "center", alignItems: "center", width: 64, height: 64, borderRadius: 8, backgroundColor: "#F3F4F6" }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: "#6B7280" }}>+{mediaItems.length - 3}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
+
+      <ImageViewer visible={viewerVisible} images={mediaItems} initialIndex={viewerIdx} onClose={() => setViewerVisible(false)} />
 
       <Text style={styles.cardResponses}>{item.response_count || 0} người phản hồi</Text>
 
@@ -119,9 +175,11 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
   const [submitting, setSubmitting] = useState(false);
   const [locationName, setLocationName] = useState("Đang lấy vị trí...");
   const [currentLoc, setCurrentLoc] = useState(null);
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
+      submittedRef.current = false;
       (async () => {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") { setLocationName("Không có quyền truy cập vị trí"); return; }
@@ -156,10 +214,12 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
   }
 
   async function handleSubmit() {
+    if (submitting || submittedRef.current) return;
     if (!categoryId) { Alert.alert("Chọn danh mục"); return; }
     if (!description.trim()) { Alert.alert("Nhập mô tả"); return; }
     if (capturedImages.length === 0) { Alert.alert("Chụp ít nhất 1 ảnh"); return; }
     setSubmitting(true);
+    submittedRef.current = true;
     try {
       const token = await AsyncStorage.getItem("accessToken");
       const media = [];
@@ -170,29 +230,24 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
           method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
         });
         const uploadData = await uploadRes.json();
-        media.push({
-          url: uploadData.url,
-          lat: currentLoc?.latitude || null,
-          lng: currentLoc?.longitude || null,
-          locationName: locationName,
-          capturedAt: img.capturedAt || new Date().toISOString(),
-        });
+        media.push({ url: uploadData.url, lat: currentLoc?.latitude || null, lng: currentLoc?.longitude || null, locationName, capturedAt: img.capturedAt });
       }
       const payload = {
-        categoryId,
-        description: description.trim(),
-        lat: currentLoc?.latitude || 21.0285,
-        lng: currentLoc?.longitude || 105.8542,
-        locationName,
-        radius,
-        urgency,
-        media,
+        categoryId, description: description.trim(),
+        lat: currentLoc?.latitude || 21.0285, lng: currentLoc?.longitude || 105.8542,
+        locationName, radius, urgency, media,
       };
       await api.post("/sos", payload);
+      // Clear local state BEFORE closing to avoid "Bỏ yêu cầu?" dialog
+      setCategoryId(null);
+      setDescription("");
+      setCapturedImages([]);
+      setStep("category");
       Alert.alert("Đã gửi yêu cầu", "Yêu cầu SOS của bạn đã được gửi đến những người trong khu vực.");
       onSubmit?.();
-      handleClose();
+      onClose();
     } catch (e) {
+      submittedRef.current = false;
       console.log("[SOS] Submit error:", e?.response?.status, e?.response?.data, e?.message);
       const msg = e?.response?.data?.error || e?.message || "Không thể gửi yêu cầu. Vui lòng thử lại.";
       Alert.alert("Lỗi", msg);
@@ -212,6 +267,7 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
   }
 
   function resetForm() {
+    submittedRef.current = false;
     setStep("category");
     setCategoryId(null);
     setDescription("");
@@ -224,10 +280,10 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <View style={styles.createOverlay}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={handleClose} />
-          <View style={[styles.createSheet, { paddingBottom: insets.bottom }]}>
+          <View style={[styles.createSheet, { paddingBottom: Platform.OS === "ios" ? insets.bottom : 0 }]}>
             <View style={styles.createHandle} />
             <View style={styles.createHeader}>
               <Text style={styles.createTitle}>Tạo yêu cầu SOS</Text>
@@ -245,7 +301,6 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
                   </TouchableOpacity>
                 ))}
               </View>
-
               <Text style={styles.label}>Ảnh hiện trường</Text>
               <View style={styles.cameraRow}>
                 {capturedImages.map((img, i) => (
@@ -263,27 +318,14 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
                   </TouchableOpacity>
                 )}
               </View>
-              {capturedImages.length === 0 && (
-                <Text style={styles.hint}>Chụp ít nhất 1 ảnh hiện trường (tối đa 3 ảnh)</Text>
-              )}
-
+              {capturedImages.length === 0 && <Text style={styles.hint}>Chụp ít nhất 1 ảnh hiện trường (tối đa 3 ảnh)</Text>}
               <Text style={styles.label}>Bạn cần hỗ trợ gì?</Text>
-              <TextInput
-                style={styles.descInput}
-                placeholder="Ví dụ: Xe máy bị thủng lốp, đang ở gần ngã tư..."
-                placeholderTextColor="#9CA3AF"
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                textAlignVertical="top"
-              />
-
+              <TextInput style={styles.descInput} placeholder="Ví dụ: Xe máy bị thủng lốp, đang ở gần ngã tư..." placeholderTextColor="#9CA3AF" value={description} onChangeText={setDescription} multiline textAlignVertical="top" />
               <Text style={styles.label}>Vị trí của bạn</Text>
               <View style={styles.locationRow}>
                 <Ionicons name="location-outline" size={20} color={colors.primary} />
                 <Text style={styles.locationText} numberOfLines={2}>{locationName}</Text>
               </View>
-
               <Text style={styles.label}>Phạm vi tìm người hỗ trợ</Text>
               <View style={styles.radiusRow}>
                 {RADII.map(r => (
@@ -292,15 +334,10 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
                   </TouchableOpacity>
                 ))}
               </View>
-
               <Text style={styles.label}>Mức độ khẩn cấp</Text>
               <View style={styles.urgencyRow}>
                 {URGENCIES.map(u => (
-                  <TouchableOpacity
-                    key={u.value}
-                    style={[styles.urgencyCard, urgency === u.value && { backgroundColor: u.color + "15", borderColor: u.color }]}
-                    onPress={() => setUrgency(u.value)}
-                  >
+                  <TouchableOpacity key={u.value} style={[styles.urgencyCard, urgency === u.value && { backgroundColor: u.color + "15", borderColor: u.color }]} onPress={() => setUrgency(u.value)}>
                     <Ionicons name={u.icon} size={24} color={u.color} />
                     <Text style={[styles.urgencyCardLabel, urgency === u.value && { color: u.color }]}>{u.label}</Text>
                   </TouchableOpacity>
@@ -308,16 +345,8 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
               </View>
             </ScrollView>
             <View style={styles.submitWrap}>
-              <TouchableOpacity
-                onPress={handleSubmit}
-                disabled={submitting}
-                style={[styles.submitBtn, submitting && { opacity: 0.5 }]}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.submitText}>🆘 ĐĂNG YÊU CẦU</Text>
-                )}
+              <TouchableOpacity onPress={handleSubmit} disabled={submitting} style={[styles.submitBtn, submitting && { opacity: 0.5 }]}>
+                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>🆘 ĐĂNG YÊU CẦU</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -354,7 +383,7 @@ export default function SOSScreen() {
     if (!socket) return;
     const onNew = (sos) => { setSosList(prev => { if (prev.find(s => s.id === sos.id)) return prev; return [sos, ...prev]; }); };
     const onUpdated = (sos) => { setSosList(prev => prev.map(s => s.id === sos.id ? sos : s)); setMySos(prev => prev.map(s => s.id === sos.id ? sos : s)); };
-    const onCancelled = ({ sosId }) => { setSosList(prev => prev.filter(s => s.id !== sosId)); };
+    const onCancelled = ({ sosId }) => { setSosList(prev => prev.filter(s => s.id !== sosId)); setMySos(prev => prev.filter(s => s.id !== sosId)); };
     socket.on("sos:new", onNew); socket.on("sos:updated", onUpdated); socket.on("sos:cancelled", onCancelled);
     return () => { socket.off("sos:new", onNew); socket.off("sos:updated", onUpdated); socket.off("sos:cancelled", onCancelled); };
   }, [radius]));
@@ -397,27 +426,18 @@ export default function SOSScreen() {
     try {
       setSubmitting(true);
       const res = await api.put("/sos/helper/profile", {
-        is_provider: true,
-        is_available: helperAvailable,
-        service_radius: helperRadius,
-        category_ids: helperCategories,
+        is_provider: true, is_available: helperAvailable, service_radius: helperRadius, category_ids: helperCategories,
       });
       setHelperProfile(res.data);
       setShowHelperModal(false);
       Alert.alert("Đã lưu", "Thông tin hỗ trợ SOS đã được cập nhật.");
-    } catch (e) {
-      Alert.alert("Lỗi", "Không thể lưu thông tin.");
-    }
+    } catch (e) { Alert.alert("Lỗi", "Không thể lưu thông tin."); }
     setSubmitting(false);
   }
 
   function goToMyLocation() {
     if (userLocation && mapRef.current) {
-      mapRef.current.animateToRegion({
-        ...userLocation,
-        latitudeDelta: 0.02,
-        longitudeDelta: 0.02,
-      }, 500);
+      mapRef.current.animateToRegion({ ...userLocation, latitudeDelta: 0.02, longitudeDelta: 0.02 }, 500);
     }
   }
 
@@ -425,20 +445,17 @@ export default function SOSScreen() {
     Alert.alert("Hỗ trợ yêu cầu này?", item.description, [
       { text: "Huỷ", style: "cancel" },
       { text: "TÔI CÓ THỂ HỖ TRỢ", onPress: async () => {
-        try {
-          await api.post(`/sos/${item.id}/response`, { message: "Tôi có thể hỗ trợ!" });
-          Alert.alert("Đã phản hồi", "Người gửi sẽ được thông báo.");
-          fetchSOS();
-        } catch (e) { Alert.alert("Lỗi", "Không thể phản hồi"); }
+        try { await api.post(`/sos/${item.id}/response`, { message: "Tôi có thể hỗ trợ!" }); Alert.alert("Đã phản hồi", "Người gửi sẽ được thông báo."); fetchSOS(); } catch (e) { Alert.alert("Lỗi", "Không thể phản hồi"); }
       }},
     ]);
   }
 
   function openSOSDetail(item) {
     const statusLabels = { OPEN: "Đang mở", MATCHING: "Đang ghép", ACCEPTED: "Đã chấp nhận", IN_PROGRESS: "Đang xử lý", COMPLETED: "Hoàn thành", CANCELLED: "Đã huỷ" };
-    Alert.alert("Chi tiết SOS", `${item.description}\n\nDanh mục: ${item.category_name || "Khác"}\nTrạng thái: ${statusLabels[item.status] || item.status}\n📍 ${item.distance != null ? formatDistance(item.distance) : item.location_name || ""}\n📏 Bán kính: ${item.radius >= 1000 ? `${item.radius / 1000}km` : `${item.radius}m`}`, [
-      { text: "Đóng", style: "cancel" },
-    ]);
+    let msg = item.description;
+    if (item.media?.length > 0) msg += "\n📷 " + item.media.length + " ảnh hiện trường";
+    msg += `\n\nDanh mục: ${item.category_name || "Khác"}\nTrạng thái: ${statusLabels[item.status] || item.status}\n📍 ${item.distance != null ? formatDistance(item.distance) : item.location_name || ""}\n📏 Bán kính: ${item.radius >= 1000 ? `${item.radius / 1000}km` : `${item.radius}m`}`;
+    Alert.alert("Chi tiết SOS", msg, [{ text: "Đóng", style: "cancel" }]);
   }
 
   const data = tab === "radar" ? sosList : mySos;
@@ -461,9 +478,7 @@ export default function SOSScreen() {
           {helperProfile?.is_provider ? (
             <>
               <Text style={styles.helperStatus}>{helperAvailable ? "🟢 Đang nhận SOS" : "⚪ Tạm ngưng"}</Text>
-              <Text style={styles.helperServices} numberOfLines={1}>
-                {helperProfile.categories?.map(c => c.name).join(", ") || "Chưa chọn dịch vụ"}
-              </Text>
+              <Text style={styles.helperServices} numberOfLines={1}>{helperProfile.categories?.map(c => c.name).join(", ") || "Chưa chọn dịch vụ"}</Text>
               <Text style={styles.helperRadiusText}>📏 {helperRadius >= 1000 ? `${helperRadius / 1000}km` : `${helperRadius}m`}</Text>
             </>
           ) : (
@@ -473,10 +488,7 @@ export default function SOSScreen() {
             </>
           )}
         </View>
-        <TouchableOpacity
-          style={[styles.helperBtn, helperProfile?.is_provider ? styles.helperBtnManage : styles.helperBtnRegister]}
-          onPress={() => setShowHelperModal(true)}
-        >
+        <TouchableOpacity style={[styles.helperBtn, helperProfile?.is_provider ? styles.helperBtnManage : styles.helperBtnRegister]} onPress={() => setShowHelperModal(true)}>
           <Text style={[styles.helperBtnText, helperProfile?.is_provider && { color: "#374151" }]}>{helperProfile?.is_provider ? "Quản lý" : "Đăng ký"}</Text>
         </TouchableOpacity>
       </View>
@@ -496,26 +508,21 @@ export default function SOSScreen() {
       {/* Radar Tab */}
       {tab === "radar" ? (
         <View style={{ flex: 1 }}>
-          {/* Map */}
           {userLocation ? (
             <View style={{ height: 240 }}>
-              <MapView
-                ref={mapRef}
-                style={{ flex: 1 }}
-                provider={PROVIDER_DEFAULT}
-                initialRegion={{
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude,
-                  latitudeDelta: 0.05,
-                  longitudeDelta: 0.05,
-                }}
-                showsUserLocation
-                showsMyLocationButton={false}
-              >
+              <MapView ref={mapRef} style={{ flex: 1 }} provider={PROVIDER_DEFAULT}
+                initialRegion={{ latitude: userLocation.latitude, longitude: userLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
+                showsUserLocation showsMyLocationButton={false}>
                 <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} flipY={false} />
-                {sosList.filter(s => s.lat && s.lng).map(sos => (
-                  <Marker key={sos.id} coordinate={{ latitude: parseFloat(sos.lat), longitude: parseFloat(sos.lng) }}
-                    title={sos.category_name || "Yêu cầu hỗ trợ"} description={sos.description?.slice(0, 50)} pinColor="#EF4444" />
+                {/* Each SOS gets its OWN marker with its OWN lat/lng from the SOS record */}
+                {sosList.filter(s => s.lat != null && s.lng != null).map(sos => (
+                  <Marker key={sos.id}
+                    coordinate={{ latitude: parseFloat(sos.lat), longitude: parseFloat(sos.lng) }}
+                    title={sos.category_name || "Yêu cầu hỗ trợ"}
+                    description={sos.description?.slice(0, 50)}
+                    pinColor={sos.is_owner ? "#3B82F6" : "#EF4444"}
+                    onPress={() => openSOSDetail(sos)}
+                  />
                 ))}
                 <Circle center={{ latitude: userLocation.latitude, longitude: userLocation.longitude }}
                   radius={radius} fillColor="rgba(37, 99, 235, 0.08)" strokeColor="rgba(37, 99, 235, 0.3)" strokeWidth={2} />
@@ -543,7 +550,7 @@ export default function SOSScreen() {
             </View>
           </View>
 
-          {/* SOS List */}
+          {/* SOS List with Image Viewer */}
           <View style={styles.sosListHeader}>
             <Text style={styles.sosListTitle}>Yêu cầu gần bạn</Text>
             <Text style={styles.sosListCount}>{sosList.length} yêu cầu</Text>
@@ -551,26 +558,18 @@ export default function SOSScreen() {
           {loading ? (
             <View style={{ padding: 20, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
           ) : (
-            <FlatList
-              data={sosList}
-              keyExtractor={(item) => item.id}
+            <FlatList data={sosList} keyExtractor={(item) => item.id}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSOS(); }} tintColor={colors.primary} />}
               contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
               ListEmptyComponent={
                 <View style={{ alignItems: "center", paddingVertical: 40, paddingHorizontal: 20 }}>
                   <Ionicons name="map-outline" size={48} color="#D1D5DB" />
                   <Text style={{ fontSize: 16, fontWeight: "600", color: "#6B7280", marginTop: 12 }}>Không có yêu cầu hỗ trợ gần bạn</Text>
-                  <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6, textAlign: "center" }}>
-                    Khi có yêu cầu phù hợp trong bán kính của bạn, chúng sẽ xuất hiện tại đây.
-                  </Text>
-                  <TouchableOpacity onPress={() => { fetchSOS(); }} style={styles.retryBtn}>
-                    <Text style={styles.retryText}>Tìm lại</Text>
-                  </TouchableOpacity>
+                  <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6, textAlign: "center" }}>Khi có yêu cầu phù hợp trong bán kính của bạn, chúng sẽ xuất hiện tại đây.</Text>
+                  <TouchableOpacity onPress={() => { fetchSOS(); }} style={styles.retryBtn}><Text style={styles.retryText}>Tìm lại</Text></TouchableOpacity>
                 </View>
               }
-              renderItem={({ item }) => (
-                <SOSCard item={item} onRespond={respondToSOS} onPress={openSOSDetail} />
-              )}
+              renderItem={({ item }) => <SOSCard item={item} onRespond={respondToSOS} onPress={openSOSDetail} />}
             />
           )}
         </View>
@@ -579,23 +578,17 @@ export default function SOSScreen() {
         loading ? (
           <View style={{ paddingTop: 40 }}><ActivityIndicator color={colors.primary} /></View>
         ) : (
-          <FlatList
-            data={mySos}
-            keyExtractor={(item) => item.id}
+          <FlatList data={mySos} keyExtractor={(item) => item.id}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSOS(); }} tintColor={colors.primary} />}
             contentContainerStyle={{ padding: 16, paddingBottom: 16 }}
             ListEmptyComponent={
               <View style={{ alignItems: "center", paddingVertical: 40 }}>
                 <Ionicons name="flag-outline" size={48} color="#D1D5DB" />
                 <Text style={{ fontSize: 16, fontWeight: "600", color: "#6B7280", marginTop: 12 }}>Bạn chưa có yêu cầu SOS nào</Text>
-                <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.retryBtn, { marginTop: 16 }]}>
-                  <Text style={styles.retryText}>Tạo yêu cầu</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowCreate(true)} style={[styles.retryBtn, { marginTop: 16 }]}><Text style={styles.retryText}>Tạo yêu cầu</Text></TouchableOpacity>
               </View>
             }
-            renderItem={({ item }) => (
-              <SOSCard item={item} onPress={openSOSDetail} isOwner />
-            )}
+            renderItem={({ item }) => <SOSCard item={item} onPress={openSOSDetail} isOwner />}
           />
         )
       )}
@@ -609,9 +602,7 @@ export default function SOSScreen() {
             <View style={styles.createHandle} />
             <View style={styles.createHeader}>
               <Text style={styles.createTitle}>Hỗ trợ SOS</Text>
-              <TouchableOpacity onPress={() => setShowHelperModal(false)} style={styles.createCloseBtn}>
-                <Ionicons name="close" size={24} color="#000" />
-              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowHelperModal(false)} style={styles.createCloseBtn}><Ionicons name="close" size={24} color="#000" /></TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
               <Text style={styles.label}>Bạn có thể hỗ trợ gì?</Text>
@@ -630,7 +621,6 @@ export default function SOSScreen() {
                 })}
               </View>
               {helperCategories.length === 0 && <Text style={styles.hint}>Chọn ít nhất 1 dịch vụ</Text>}
-
               <Text style={styles.label}>Bán kính hỗ trợ</Text>
               <View style={styles.radiusRow}>
                 {RADII.map(r => (
@@ -639,7 +629,6 @@ export default function SOSScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-
               <Text style={styles.label}>Trạng thái</Text>
               <View style={styles.helperStatusRow}>
                 <TouchableOpacity style={[styles.helperStatusChip, helperAvailable && styles.helperStatusActive]} onPress={() => setHelperAvailable(true)}>
@@ -665,20 +654,16 @@ export default function SOSScreen() {
 }
 
 const styles = StyleSheet.create({
-  // Header — background covers status bar area
   headerBg: { backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12 },
   title: { fontSize: 24, fontWeight: "700", color: "#000" },
   headerCreateBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#EF4444", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#EF4444", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
-  // Tab
   tabBar: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 8, backgroundColor: "#fff", gap: 8 },
   tab: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: "#F3F4F6", gap: 6 },
   tabActive: { backgroundColor: colors.primary },
   tabText: { fontSize: 14, fontWeight: "500", color: "#6B7280" },
   tabTextActive: { color: "#fff" },
-  // Map
   myLocBtn: { position: "absolute", bottom: 12, right: 12, width: 40, height: 40, borderRadius: 20, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4 },
-  // Radius bar
   radiusBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
   radiusBarLabel: { fontSize: 13, fontWeight: "500", color: "#6B7280", marginRight: 8 },
   radiusBarChips: { flexDirection: "row", gap: 6 },
@@ -686,11 +671,9 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary },
   chipText: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
   chipTextActive: { color: "#fff" },
-  // SOS list header
   sosListHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 12, backgroundColor: "#F9FAFB" },
   sosListTitle: { fontSize: 16, fontWeight: "600", color: "#111827" },
   sosListCount: { fontSize: 13, color: "#6B7280" },
-  // Card
   card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12, elevation: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
   cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   cardAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 12 },
@@ -716,7 +699,6 @@ const styles = StyleSheet.create({
   ownerBadgeText: { fontSize: 13, color: "#6B7280", fontWeight: "500" },
   retryBtn: { marginTop: 16, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary },
   retryText: { color: "#fff", fontWeight: "600", fontSize: 14 },
-  // Helper card
   helperCard: { flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginBottom: 4, padding: 14, backgroundColor: "#F0F9FF", borderRadius: 14, borderWidth: 1, borderColor: "#BFDBFE" },
   helperCardLeft: { flex: 1, marginRight: 12 },
   helperStatus: { fontSize: 14, fontWeight: "700", color: "#111827", marginBottom: 2 },
@@ -733,7 +715,6 @@ const styles = StyleSheet.create({
   helperStatusActive: { borderColor: "#22C55E", backgroundColor: "#F0FDF4" },
   helperStatusPaused: { borderColor: "#F97316", backgroundColor: "#FFF7ED" },
   helperStatusChipText: { fontSize: 14, fontWeight: "600", color: "#6B7280" },
-  // Create SOS
   createOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
   createSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1 },
   createHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginTop: 10, marginBottom: 4 },
