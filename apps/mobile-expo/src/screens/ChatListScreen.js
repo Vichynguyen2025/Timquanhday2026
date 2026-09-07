@@ -7,6 +7,7 @@ import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { useSocket } from "../contexts/SocketContext";
 import { useBadge } from "../contexts/BadgeContext";
+import { useAuth } from "../contexts/AuthContext";
 import { colors } from "../theme/colors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -15,17 +16,16 @@ export default function ChatListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { onlineUsers } = useSocket();
   const { setMessageUnread } = useBadge();
+  const { user } = useAuth();
+  const currentUserId = user?.id;
   const [conversations, setConversations] = useState([]);
   const [blockedConversations, setBlockedConversations] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [currentUserId, setCurrentUserId] = useState(null);
 
   useFocusEffect(useCallback(() => {
     fetchConversations();
     fetchUnreadCount();
-    // Get current user id
-    api.get("/auth/me").then(r => setCurrentUserId(r.data.id)).catch(() => {});
     const socket = getSocket();
     if (!socket) return;
     const handler = (msg) => {

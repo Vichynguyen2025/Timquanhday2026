@@ -8,8 +8,9 @@ import { colors } from "../theme/colors";
 
 export default function EditProfileScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { setUser } = useAuth();
-  const initial = route.params?.profile || {};
+  const { user, setUser } = useAuth();
+  // Canonical source: useAuth().user (not navigation params snapshot)
+  const initial = user || route.params?.profile || {};
   const [name, setName] = useState(initial.name || "");
   const [bio, setBio] = useState(initial.bio || "");
   const [saving, setSaving] = useState(false);

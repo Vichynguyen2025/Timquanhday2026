@@ -12,6 +12,7 @@ import { getSocket } from "../services/socket";
 import { colors } from "../theme/colors";
 import { useLocation } from "../contexts/LocationContext";
 import { useBadge } from "../contexts/BadgeContext";
+import { useAuth } from "../contexts/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const RADII = [100, 200, 500, 1000, 5000];
@@ -316,6 +317,9 @@ export default function SOSScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { currentLocation: sharedLocation } = useLocation();
   const { setSosUnread } = useBadge();
+  const { user, updateUser } = useAuth();
+  // Canonical helper profile: read from AuthContext.user.service_profile
+  const canonicalSp = user?.service_profile || null;
   const [tab, setTab] = useState("radar");
   const [sosList, setSosList] = useState([]);
   const [mySos, setMySos] = useState([]);
@@ -384,6 +388,8 @@ export default function SOSScreen({ navigation }) {
       const res = await api.get("/sos/helper/profile"); const data = res.data;
       setHelperProfile(data); setHelperCategories(data.categories?.map(c => c.id) || []);
       setHelperRadius(data.service_radius || 1000); setHelperAvailable(data.is_available !== false);
+      // Sync to AuthContext canonical user state
+      if (data) updateUser({ service_profile: data });
     } catch (e) {}
   }
 
@@ -391,7 +397,10 @@ export default function SOSScreen({ navigation }) {
     try {
       setSubmitting(true);
       const res = await api.put("/sos/helper/profile", { is_provider: true, is_available: helperAvailable, service_radius: helperRadius, category_ids: helperCategories });
-      setHelperProfile(res.data); setShowHelperModal(false); Alert.alert("Đã lưu", "Thông tin hỗ trợ SOS đã được cập nhật.");
+      setHelperProfile(res.data); setShowHelperModal(false);
+      // Sync to AuthContext canonical user state
+      if (res.data) updateUser({ service_profile: res.data });
+      Alert.alert("Đã lưu", "Thông tin hỗ trợ SOS đã được cập nhật.");
     } catch (e) { Alert.alert("Lỗi", "Không thể lưu thông tin."); }
     setSubmitting(false);
   }
@@ -450,6 +459,15 @@ export default function SOSScreen({ navigation }) {
     setShowProviders(true);
   }
 
+  // ─── Sync helper modal state from canonical AuthContext user ──
+  useEffect(() => {
+    if (showHelperModal && canonicalSp) {
+      setHelperCategories(canonicalSp.categories?.map(c => c.id) || []);
+      setHelperRadius(canonicalSp.service_radius || 1000);
+      setHelperAvailable(canonicalSp.is_available !== false);
+    }
+  }, [showHelperModal, canonicalSp]);
+
   return (
     <View style={{ flex: 1, backgroundColor: "#fff" }}>
       {/* Header — phủ status bar */}
@@ -462,21 +480,21 @@ export default function SOSScreen({ navigation }) {
 
       {/* Helper status — compact bar */}
       <TouchableOpacity style={styles.helperBar} onPress={() => setShowHelperModal(true)}>
-        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Text style={styles.helperBarIcon}>{helperProfile?.is_provider ? (helperAvailable ? "🟢" : "⚪") : "🆘"}</Text>
-          <Text style={styles.helperBarText}>
-            {helperProfile?.is_provider
-              ? (helperAvailable ? "Đang nhận SOS" : "Tạm ngưng")
-              : "Đăng ký hỗ trợ SOS"}
-          </Text>
-          {helperProfile?.is_provider && (
-            <Text style={styles.helperBarSub}>
-              {helperProfile.categories?.slice(0, 2).map(c => c.name).join(", ")}{helperProfile.categories?.length > 2 ? ` +${helperProfile.categories.length - 2}` : ""} · {helperRadius >= 1000 ? `${helperRadius / 1000}km` : `${helperRadius}m`}
-            </Text>
-          )}
-        </View>
-        <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
-      </TouchableOpacity>
+              <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={styles.helperBarIcon}>{canonicalSp?.is_provider ? (helperAvailable ? "🟢" : "⚪") : "🆘"}</Text>
+                <Text style={styles.helperBarText}>
+                  {canonicalSp?.is_provider
+                    ? (helperAvailable ? "Đang nhận SOS" : "Tạm ngưng")
+                    : "Đăng ký hỗ trợ SOS"}
+                </Text>
+                {canonicalSp?.is_provider && (
+                  <Text style={styles.helperBarSub}>
+                    {canonicalSp.categories?.slice(0, 2).map(c => c.name).join(", ")}{canonicalSp.categories?.length > 2 ? ` +${canonicalSp.categories.length - 2}` : ""} · {canonicalSp.service_radius >= 1000 ? `${canonicalSp.service_radius / 1000}km` : `${canonicalSp.service_radius}m`}
+                  </Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
 
       {/* Tab bar */}
       <View style={styles.tabBar}>
