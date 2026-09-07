@@ -20,7 +20,6 @@ export default function ChatListScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [totalUnread, setTotalUnread] = useState(0);
 
   useFocusEffect(useCallback(() => {
     fetchConversations();
@@ -31,19 +30,13 @@ export default function ChatListScreen({ navigation }) {
     if (!socket) return;
     const handler = (msg) => {
       setConversations((prev) => {
-        // Only increment unread if message is NOT from current user
-        const isFromOthers = msg.sender_id && msg.sender_id !== currentUserId;
         const updated = prev.map((c) =>
           c.id === msg.conversation_id
-            ? { ...c, last_message: msg.content || (msg.type === "image" ? "📷 Hình ảnh" : c.last_message), last_message_at: msg.created_at, unread_count: (c.unread_count || 0) + (isFromOthers ? 1 : 0) }
+            ? { ...c, last_message: msg.content || (msg.type === "image" ? "📷 Hình ảnh" : c.last_message), last_message_at: msg.created_at, unread_count: (c.unread_count || 0) + (msg.sender_id && msg.sender_id !== currentUserId ? 1 : 0) }
             : c
         );
         return updated.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
       });
-      if (msg.sender_id && msg.sender_id !== currentUserId) {
-        setTotalUnread(prev => prev + 1);
-        setMessageUnread(prev => prev + 1);
-      }
     };
     socket.on("message:new", handler);
     return () => socket.off("message:new", handler);
@@ -52,7 +45,6 @@ export default function ChatListScreen({ navigation }) {
   async function fetchUnreadCount() {
     try {
       const res = await api.get("/messages/unread-count");
-      setTotalUnread(res.data.count || 0);
       setMessageUnread(res.data.count || 0);
     } catch (e) {}
   }

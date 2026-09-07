@@ -11,6 +11,7 @@ import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { colors } from "../theme/colors";
 import { useLocation } from "../contexts/LocationContext";
+import { useBadge } from "../contexts/BadgeContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const RADII = [100, 200, 500, 1000, 5000];
@@ -314,6 +315,7 @@ function CreateSOSModal({ visible, onClose, onSubmit }) {
 export default function SOSScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { currentLocation: sharedLocation } = useLocation();
+  const { setSosUnread } = useBadge();
   const [tab, setTab] = useState("radar");
   const [sosList, setSosList] = useState([]);
   const [mySos, setMySos] = useState([]);
@@ -363,14 +365,16 @@ export default function SOSScreen({ navigation }) {
   async function fetchSOS() {
     setLoading(true);
     try {
-      const [radarRes, mineRes, helpingRes] = await Promise.all([
+      const [radarRes, mineRes, helpingRes, unreadRes] = await Promise.all([
         api.get("/sos", { params: { radius } }),
         api.get("/sos/mine"),
         api.get("/sos/helping"),
+        api.get("/sos/unread-count"),
       ]);
       setSosList(radarRes.data?.sos || []);
       setMySos(mineRes.data?.sos || []);
       setHelpingSos(helpingRes.data?.sos || []);
+      setSosUnread(unreadRes.data?.count || 0);
     } catch (e) {}
     setLoading(false); setRefreshing(false);
   }

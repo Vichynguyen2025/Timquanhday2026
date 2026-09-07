@@ -23,7 +23,7 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function HomeTabs() {
-  const { messageUnread, notificationUnread } = useBadge();
+  const { messageUnread, notificationUnread, sosUnread } = useBadge();
 
   return (
     <Tab.Navigator
@@ -61,6 +61,7 @@ function HomeTabs() {
         component={SOSScreen}
         options={{
           tabBarLabel: "SOS",
+          tabBarBadge: sosUnread > 0 ? (sosUnread > 99 ? "99+" : sosUnread) : undefined,
           tabBarIcon: ({ focused, color }) => (
             <Ionicons
               name={focused ? "alert-circle" : "alert-circle-outline"}

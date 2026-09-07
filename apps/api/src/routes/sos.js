@@ -117,6 +117,26 @@ router.get('/mine', authenticate, async (req, res) => {
   }
 });
 
+// ─── GET /api/sos/unread-count — Unread SOS count ──
+router.get('/unread-count', authenticate, async (req, res) => {
+  try {
+    // Count SOS that are OPEN or MATCHING, not owned by current user,
+    // within user's location radius, and where user is a registered helper
+    // For MVP: count all OPEN/MATCHING SOS not owned by user
+    const [result] = await query(
+      `SELECT COUNT(*) as count FROM sos_requests
+       WHERE user_id != ?
+       AND status IN ('OPEN', 'MATCHING')
+       AND expires_at > NOW()`,
+      [req.user.id]
+    );
+    res.json({ count: result.count });
+  } catch (err) {
+    console.error('[SOS] Unread count error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/sos/helping — SOS I'm helping ──────
 router.get('/helping', authenticate, async (req, res) => {
   try {
