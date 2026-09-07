@@ -276,10 +276,15 @@ router.put('/helper/profile', authenticate, async (req, res) => {
       [profile.id]
     );
 
-    res.json({
-      ...profile,
-      categories,
-    });
+    const result = { ...profile, categories };
+    // Emit profile update event for SOS helper changes
+    if (io) {
+      io.to(`user:${req.user.id}`).emit('user:profile_updated', {
+        userId: req.user.id,
+        changes: { service_profile: result },
+      });
+    }
+    res.json(result);
   } catch (err) {
     console.error('[SOS] Helper profile error:', err);
     res.status(500).json({ error: 'Internal server error' });

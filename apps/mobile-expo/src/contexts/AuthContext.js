@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../services/api";
 
@@ -40,7 +40,24 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, loading, login, register, logout, setUser }}>{children}</AuthContext.Provider>;
+  // ─── Refresh user from server ────────────────────
+  const refreshUser = useCallback(async () => {
+    try {
+      const res = await api.get("/auth/me");
+      setUser(res.data);
+    } catch (e) {}
+  }, []);
+
+  // ─── Merge partial profile changes ───────────────
+  const updateUser = useCallback((changes) => {
+    setUser(prev => prev ? { ...prev, ...changes } : prev);
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, loading, login, register, logout, setUser, refreshUser, updateUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export const useAuth = () => useContext(AuthContext);

@@ -5,6 +5,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
 const router = Router();
+let io = null;
+export function setSocketIO(socketIO) { io = socketIO; }
 
 // Search users
 router.get('/search', authenticate, async (req, res) => {
@@ -41,6 +43,10 @@ router.patch('/me', authenticate, async (req, res) => {
     const values = Object.values(updates);
     await query(`UPDATE users SET ${setClauses} WHERE id = ?`, [...values, req.user.id]);
     const user = await queryOne('SELECT id, name, email, phone, avatar, bio, location_enabled FROM users WHERE id = ?', [req.user.id]);
+    // Emit profile update event
+    if (io) {
+      io.to(`user:${req.user.id}`).emit('user:profile_updated', { userId: req.user.id, changes: user });
+    }
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
@@ -53,6 +59,10 @@ router.patch('/location', authenticate, async (req, res) => {
     const { enabled } = req.body;
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be boolean' });
     await query('UPDATE users SET location_enabled = ? WHERE id = ?', [enabled ? 1 : 0, req.user.id]);
+    // Emit profile update event
+    if (io) {
+      io.to(`user:${req.user.id}`).emit('user:profile_updated', { userId: req.user.id, changes: { location_enabled: enabled } });
+    }
     res.json({ location_enabled: enabled });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

@@ -8,13 +8,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 import { useLocation } from "../contexts/LocationContext";
+import { useBadge } from "../contexts/BadgeContext";
 import { colors } from "../theme/colors";
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const { currentLocation, refreshLocation } = useLocation();
-  const [profile, setProfile] = useState(null);
+  const { reconcileAll } = useBadge();
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [locationToggleLoading, setLocationToggleLoading] = useState(false);
@@ -27,7 +29,8 @@ export default function ProfileScreen({ navigation }) {
   async function fetchProfile() {
     try {
       const res = await api.get("/auth/me");
-      setProfile(res.data);
+      updateUser(res.data);
+      setStats(res.data.stats);
     } catch (e) {}
     setLoading(false);
     setRefreshing(false);
@@ -37,8 +40,7 @@ export default function ProfileScreen({ navigation }) {
     setLocationToggleLoading(true);
     try {
       await api.patch("/users/location", { enabled: value });
-      setProfile(prev => prev ? { ...prev, location_enabled: value } : prev);
-      // Start or stop location service
+      updateUser({ location_enabled: value });
       if (value) {
         refreshLocation();
       }
@@ -51,9 +53,8 @@ export default function ProfileScreen({ navigation }) {
   async function toggleSosProvider(value) {
     setSosToggleLoading(true);
     try {
-      // If enabling and no categories selected yet, register with all defaults
-      let categoryIds = profile?.service_profile?.categories?.map(c => c.id) || [];
-      let serviceRadius = profile?.service_profile?.service_radius || 1000;
+      let categoryIds = user?.service_profile?.categories?.map(c => c.id) || [];
+      let serviceRadius = user?.service_profile?.service_radius || 1000;
       if (value && categoryIds.length === 0) {
         categoryIds = ["cat-sua-xe", "cat-khac"];
       }
@@ -63,10 +64,7 @@ export default function ProfileScreen({ navigation }) {
         service_radius: serviceRadius,
         category_ids: categoryIds,
       });
-      setProfile(prev => prev ? {
-        ...prev,
-        service_profile: res.data,
-      } : prev);
+      updateUser({ service_profile: res.data });
     } catch (e) {
       Alert.alert("Lỗi", "Không thể thay đổi cài đặt hỗ trợ SOS");
     }
@@ -114,15 +112,14 @@ export default function ProfileScreen({ navigation }) {
       const uploadData = await uploadRes.json();
       if (!uploadData.url) { Alert.alert("Lỗi", "Không thể tải ảnh lên"); return; }
       const res = await api.patch("/users/me", { avatar: uploadData.url });
-      setProfile(prev => prev ? { ...prev, avatar: uploadData.url } : prev);
+      updateUser(res.data);
     } catch (e) {
       Alert.alert("Lỗi", "Không thể cập nhật ảnh đại diện");
     }
   }
 
-  const p = profile;
-  const sp = p?.service_profile;
-  const stats = p?.stats;
+  const sp = user?.service_profile;
+  const p = user; // canonical identity from AuthContext
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -135,7 +132,7 @@ export default function ProfileScreen({ navigation }) {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchProfile(); }} tintColor={colors.primary} />}
           contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
         >
-          {/* Profile Header */}
+          {/* Profile Header — reads from AuthContext.user */}
           <View style={styles.headerSection}>
             <TouchableOpacity onPress={handleEditAvatar} style={styles.avatarContainer}>
               {p?.avatar ? (
@@ -158,7 +155,7 @@ export default function ProfileScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          {/* Stats row */}
+          {/* Stats row — from /auth/me */}
           {stats && (
             <View style={styles.statsRow}>
               <View style={styles.statItem}><Text style={styles.statNumber}>{stats.posts}</Text><Text style={styles.statLabel}>Bài viết</Text></View>
@@ -198,7 +195,7 @@ export default function ProfileScreen({ navigation }) {
                 <MenuDivider />
                 <MenuItem
                   icon="settings-outline" label="Cấu hình hỗ trợ"
-                  onPress={() => navigation?.navigate("SOSHelperSetup", { profile: p })}
+                  onPress={() => navigation?.navigate("SOSHelperSetup", { profile: user })}
                   sub={sp?.categories?.slice(0, 2).map(c => c.name).join(", ") + (sp?.categories?.length > 2 ? ` +${sp.categories.length - 2}` : "") + (sp?.service_radius ? ` · ${sp.service_radius >= 1000 ? sp.service_radius/1000 + "km" : sp.service_radius + "m"}` : "")}
                 />
               </>
@@ -295,7 +292,6 @@ function ToggleItem({ icon, label, value, onToggle, loading, disabled }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  // Header
   headerSection: { alignItems: "center", paddingVertical: 24, paddingHorizontal: 20 },
   avatarContainer: { position: "relative", marginBottom: 12 },
   avatar: { width: 88, height: 88, borderRadius: 44 },
@@ -307,12 +303,10 @@ const styles = StyleSheet.create({
   bio: { fontSize: 14, color: "#374151", marginTop: 8, textAlign: "center", lineHeight: 20, paddingHorizontal: 20 },
   editBtn: { flexDirection: "row", alignItems: "center", marginTop: 14, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.primary, gap: 6 },
   editBtnText: { fontSize: 14, fontWeight: "600", color: colors.primary },
-  // Stats
   statsRow: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: "#E5E7EB", marginBottom: 8 },
   statItem: { flex: 1, alignItems: "center" },
   statNumber: { fontSize: 18, fontWeight: "700", color: "#111827" },
   statLabel: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  // Sections
   sectionTitle: { fontSize: 12, fontWeight: "600", color: "#9CA3AF", letterSpacing: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 },
   section: { backgroundColor: "#fff", marginHorizontal: 16, borderRadius: 14, borderWidth: 0.5, borderColor: "#E5E7EB", overflow: "hidden" },
   menuItem: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 16 },
@@ -324,7 +318,6 @@ const styles = StyleSheet.create({
   menuBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
   menuSub: { fontSize: 12, color: "#9CA3AF", maxWidth: 120 },
   menuDivider: { height: 0.5, backgroundColor: "#E5E7EB", marginLeft: 60 },
-  // Logout
   logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginHorizontal: 16, marginTop: 24, padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: "#FEE2E2", backgroundColor: "#FFF5F5", gap: 8 },
   logoutText: { fontSize: 16, fontWeight: "600", color: "#EF4444" },
 });

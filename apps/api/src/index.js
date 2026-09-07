@@ -7,7 +7,7 @@ import { initDatabase } from './models/db.js';
 import { setupSocket } from './services/socket.js';
 import { getRedis, getRedisAdapter } from './services/redis.js';
 import authRoutes from './routes/auth.js';
-import userRoutes from './routes/users.js';
+import userRoutes, { setSocketIO as setUserSocketIO } from './routes/users.js';
 import conversationRoutes from './routes/conversations.js';
 import messageRoutes from './routes/messages.js';
 import locationRoutes from './routes/location.js';
@@ -61,6 +61,7 @@ app.use('/api/sos', sosRoutes);
 // Pass io to routes
 setSocketIO(io);
 setSosSocketIO(io);
+setUserSocketIO(io);
 
 // Socket.IO
 setupSocket(io);
