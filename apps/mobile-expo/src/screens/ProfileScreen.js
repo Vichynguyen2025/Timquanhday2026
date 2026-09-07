@@ -1,14 +1,14 @@
 import React, { useState, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Alert, Switch } from "react-native";
+import { View, Text, Image, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, ScrollView, Alert, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../services/api";
 import { useAuth } from "../contexts/AuthContext";
 import { useLocation } from "../contexts/LocationContext";
 import { colors } from "../theme/colors";
-import { getSocket } from "../services/socket";
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -75,7 +75,10 @@ export default function ProfileScreen({ navigation }) {
   async function handleLogout() {
     Alert.alert("Đăng xuất", "Bạn có chắc muốn đăng xuất?", [
       { text: "Hủy", style: "cancel" },
-      { text: "Đăng xuất", style: "destructive", onPress: logout },
+      { text: "Đăng xuất", style: "destructive", onPress: async () => {
+        try { await api.post("/auth/logout"); } catch (e) {}
+        logout();
+      }},
     ]);
   }
 
@@ -101,7 +104,7 @@ export default function ProfileScreen({ navigation }) {
 
   async function uploadAvatar(uri) {
     try {
-      const token = await require("@react-native-async-storage/async-storage").default.getItem("accessToken");
+      const token = await AsyncStorage.getItem("accessToken");
       const formData = new FormData();
       formData.append("image", { uri, type: "image/jpeg", name: "avatar.jpg" });
       const uploadRes = await fetch("https://timquanhday.de/api/upload/image", {
@@ -166,11 +169,11 @@ export default function ProfileScreen({ navigation }) {
           {/* Activity Section */}
           <Text style={styles.sectionTitle}>HOẠT ĐỘNG</Text>
           <View style={styles.section}>
-            <MenuItem icon="document-text-outline" label="Bài viết của tôi" onPress={() => {}} />
+            <MenuItem icon="document-text-outline" label="Bài viết của tôi" onPress={() => navigation?.navigate("MyPosts", { filter: "posts" })} />
             <MenuDivider />
-            <MenuItem icon="bookmark-outline" label="Bài viết đã lưu" onPress={() => {}} />
+            <MenuItem icon="bookmark-outline" label="Bài viết đã lưu" onPress={() => navigation?.navigate("MyPosts", { filter: "saves" })} />
             <MenuDivider />
-            <MenuItem icon="heart-outline" label="Bài viết đã thích" onPress={() => {}} />
+            <MenuItem icon="heart-outline" label="Bài viết đã thích" onPress={() => navigation?.navigate("MyPosts", { filter: "likes" })} />
             <MenuDivider />
             <MenuItem icon="location-outline" label="Khám phá quanh đây" onPress={() => navigation?.navigate("Explore")} />
             <MenuDivider />
@@ -205,9 +208,9 @@ export default function ProfileScreen({ navigation }) {
           {/* Settings Section */}
           <Text style={styles.sectionTitle}>CÀI ĐẶT</Text>
           <View style={styles.section}>
-            <MenuItem icon="notifications-outline" label="Thông báo" onPress={() => {}} />
+            <MenuItem icon="notifications-outline" label="Thông báo" onPress={() => navigation?.navigate("NotificationSettings")} />
             <MenuDivider />
-            <MenuItem icon="lock-closed-outline" label="Quyền riêng tư" onPress={() => {}} />
+            <MenuItem icon="lock-closed-outline" label="Quyền riêng tư" onPress={() => navigation?.navigate("PrivacySettings")} />
           </View>
 
           {/* Account Section */}
@@ -289,8 +292,6 @@ function ToggleItem({ icon, label, value, onToggle, loading, disabled }) {
     </View>
   );
 }
-
-const Image = require("react-native").Image;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },

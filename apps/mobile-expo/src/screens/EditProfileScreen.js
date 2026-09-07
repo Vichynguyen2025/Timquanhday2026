@@ -8,6 +8,7 @@ import { colors } from "../theme/colors";
 
 export default function EditProfileScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
+  const { setUser } = useAuth();
   const initial = route.params?.profile || {};
   const [name, setName] = useState(initial.name || "");
   const [bio, setBio] = useState(initial.bio || "");
@@ -17,7 +18,9 @@ export default function EditProfileScreen({ route, navigation }) {
     if (!name.trim()) { Alert.alert("Vui lòng nhập tên"); return; }
     setSaving(true);
     try {
-      await api.patch("/users/me", { name: name.trim(), bio: bio.trim() });
+      const res = await api.patch("/users/me", { name: name.trim(), bio: bio.trim() });
+      // Update global auth state
+      if (res.data) setUser(prev => prev ? { ...prev, ...res.data } : res.data);
       Alert.alert("Đã lưu", "Hồ sơ đã được cập nhật");
       navigation.goBack();
     } catch (e) {

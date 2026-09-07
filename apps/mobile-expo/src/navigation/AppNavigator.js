@@ -16,6 +16,10 @@ import ProfileScreen from "../screens/ProfileScreen";
 import EditProfileScreen from "../screens/EditProfileScreen";
 import ChangePasswordScreen from "../screens/ChangePasswordScreen";
 import BlockedUsersScreen from "../screens/BlockedUsersScreen";
+import SOSHelperSetupScreen from "../screens/SOSHelperSetupScreen";
+import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
+import PrivacySettingsScreen from "../screens/PrivacySettingsScreen";
+import MyPostsScreen from "../screens/MyPostsScreen";
 import { useAuth } from "../contexts/AuthContext";
 import { colors } from "../theme/colors";
 
@@ -95,6 +99,10 @@ export default function AppNavigator() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ animation: "slide_from_right" }} />
             <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ animation: "slide_from_right" }} />
             <Stack.Screen name="BlockedUsers" component={BlockedUsersScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="SOSHelperSetup" component={SOSHelperSetupScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="MyPosts" component={MyPostsScreen} options={{ animation: "slide_from_right" }} />
           </>
         ) : (
           <>

@@ -21,12 +21,25 @@ router.get('/search', authenticate, async (req, res) => {
   }
 });
 
-// Update profile
+// Update profile (whitelist fields only)
 router.patch('/me', authenticate, async (req, res) => {
   try {
-    const { name, bio, avatar } = req.body;
-    await query('UPDATE users SET name = COALESCE(?, name), bio = COALESCE(?, bio), avatar = COALESCE(?, avatar) WHERE id = ?',
-      [name, bio, avatar, req.user.id]);
+    const allowedFields = ['name', 'bio', 'avatar'];
+    const updates = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+    if (updates.name !== undefined) {
+      if (typeof updates.name !== 'string' || !updates.name.trim()) return res.status(400).json({ error: 'Name is required' });
+      updates.name = updates.name.trim();
+    }
+    if (updates.bio !== undefined && typeof updates.bio === 'string') updates.bio = updates.bio.trim();
+    if (updates.avatar !== undefined && updates.avatar && !updates.avatar.startsWith('http')) return res.status(400).json({ error: 'Invalid avatar URL' });
+
+    const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+    const values = Object.values(updates);
+    await query(`UPDATE users SET ${setClauses} WHERE id = ?`, [...values, req.user.id]);
     const user = await queryOne('SELECT id, name, email, phone, avatar, bio, location_enabled FROM users WHERE id = ?', [req.user.id]);
     res.json(user);
   } catch (err) {
