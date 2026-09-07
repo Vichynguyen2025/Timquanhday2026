@@ -100,8 +100,13 @@ router.post('/logout', authenticate, async (req, res) => {
 // Get Me (full profile)
 router.get('/me', authenticate, async (req, res) => {
   try {
-    const user = await queryOne('SELECT id, name, email, phone, avatar, bio, location_enabled, is_online, last_seen, created_at FROM users WHERE id = ?', [req.user.id]);
+    const user = await queryOne('SELECT id, name, email, phone, avatar, avatar_version, bio, location_enabled, is_online, last_seen, created_at FROM users WHERE id = ?', [req.user.id]);
     if (!user) return res.status(404).json({ error: 'User not found' });
+    // Apply version to avatar URL for cache invalidation
+    if (user.avatar) {
+      const sep = user.avatar.includes('?') ? '&' : '?';
+      user.avatar = `${user.avatar}${sep}v=${user.avatar_version || 0}`;
+    }
 
     // Get service profile (SOS provider settings)
     const sp = await queryOne('SELECT * FROM service_profiles WHERE user_id = ?', [req.user.id]);

@@ -8,6 +8,13 @@ const router = Router();
 let io = null;
 export function setSocketIO(socketIO) { io = socketIO; }
 
+// ─── Helper: append cache-busting version to avatar URL ──
+function versionedAvatar(avatar, version) {
+  if (!avatar) return avatar;
+  const sep = avatar.includes('?') ? '&' : '?';
+  return `${avatar}${sep}v=${version || 0}`;
+}
+
 // Search users
 router.get('/search', authenticate, async (req, res) => {
   try {
@@ -41,8 +48,17 @@ router.patch('/me', authenticate, async (req, res) => {
 
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
     const values = Object.values(updates);
-    await query(`UPDATE users SET ${setClauses} WHERE id = ?`, [...values, req.user.id]);
-    const user = await queryOne('SELECT id, name, email, phone, avatar, bio, location_enabled FROM users WHERE id = ?', [req.user.id]);
+    // If avatar is being updated, also increment avatar_version
+    if (updates.avatar !== undefined) {
+      await query('UPDATE users SET avatar = ?, avatar_version = avatar_version + 1 WHERE id = ?', [updates.avatar, req.user.id]);
+    } else {
+      await query(`UPDATE users SET ${setClauses} WHERE id = ?`, [...values, req.user.id]);
+    }
+    const user = await queryOne('SELECT id, name, email, phone, avatar, avatar_version, bio, location_enabled FROM users WHERE id = ?', [req.user.id]);
+    // Apply version to avatar URL for cache invalidation
+    if (user && user.avatar) {
+      user.avatar = versionedAvatar(user.avatar, user.avatar_version);
+    }
     // Emit profile update event
     if (io) {
       io.to(`user:${req.user.id}`).emit('user:profile_updated', { userId: req.user.id, changes: user });
