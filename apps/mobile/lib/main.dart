@@ -131,17 +131,75 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), activeIcon: Icon(Icons.chat_bubble), label: 'Tin nhắn'),
-          BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), activeIcon: Icon(Icons.explore), label: 'Khám phá'),
-          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), activeIcon: Icon(Icons.map), label: 'Vị trí'),
-          BottomNavigationBarItem(icon: Icon(Icons.notifications_outlined), activeIcon: Icon(Icons.notifications), label: 'Thông báo'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Cá nhân'),
-        ],
+      bottomNavigationBar: Consumer<NotificationProvider>(
+        builder: (context, notif, _) {
+          final notifUnread = notif.unreadCount;
+          return BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: (i) {
+              setState(() => _currentIndex = i);
+              // Refresh notifications when switching to the tab
+              if (i == 3) notif.fetchNotifications();
+            },
+            items: const [
+              BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), activeIcon: Icon(Icons.chat_bubble), label: 'Tin nhắn'),
+              BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), activeIcon: Icon(Icons.explore), label: 'Khám phá'),
+              BottomNavigationBarItem(icon: Icon(Icons.map_outlined), activeIcon: Icon(Icons.map), label: 'Vị trí'),
+              BottomNavigationBarItem(
+                icon: _BadgedIcon(
+                  icon: Icons.notifications_outlined,
+                  badge: notifUnread,
+                  active: false,
+                ),
+                activeIcon: _BadgedIcon(
+                  icon: Icons.notifications,
+                  badge: notifUnread,
+                  active: true,
+                ),
+                label: 'Thông báo',
+              ),
+              BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Cá nhân'),
+            ],
+          );
+        },
       ),
+    );
+  }
+}
+
+/// Wraps an icon with a badge count (material-style)
+class _BadgedIcon extends StatelessWidget {
+  final IconData icon;
+  final int badge;
+  final bool active;
+  const _BadgedIcon({required this.icon, required this.badge, required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? AppTheme.primary : AppTheme.textTertiary;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(icon, color: color),
+        if (badge > 0)
+          Positioned(
+            right: -8,
+            top: -4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppTheme.primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              constraints: const BoxConstraints(minWidth: 14),
+              child: Text(
+                badge > 99 ? '99+' : '$badge',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

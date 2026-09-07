@@ -137,7 +137,7 @@ router.post('/:id/reaction', authenticate, async (req, res) => {
       await query('INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
         [req.params.id, req.user.id, emoji]);
       if (msg[0].sender_id !== req.user.id) {
-        await createNotification(msg[0].sender_id, 'like', 'Cảm xúc tin nhắn', `${req.user.name || 'Ai đó'} đã bày tỏ cảm xúc ${emoji}`, { messageId: req.params.id });
+        // Message reactions are Messenger domain — no notification created
       }
       res.json({ action: 'added', emoji });
     }

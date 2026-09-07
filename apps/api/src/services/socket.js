@@ -119,13 +119,10 @@ export function setupSocket(io) {
         // Broadcast to conversation room EXCEPT sender (sender gets ACK)
         socket.to(`conversation:${conversationId}`).emit('message:new', message);
 
-        // Notify specific user if needed
+        // Notify specific user if needed (Messenger only — NO notification created)
+        // Message badge uses message:new event + unread-count API, NOT notifications table
         if (receiverId) {
           io.to(`user:${receiverId}`).emit('message:new', message);
-          await createNotification(receiverId, 'message', 'Tin nhắn mới', content || 'Đã gửi ảnh', { conversationId });
-          io.to(`user:${receiverId}`).emit('notification:new', {
-            type: 'message', title: 'Tin nhắn mới', body: content || 'Đã gửi ảnh', data: { conversationId }
-          });
         }
 
         // Update conversation last message
@@ -194,7 +191,7 @@ export function setupSocket(io) {
           await query('INSERT INTO message_reactions (id, message_id, user_id, emoji) VALUES (UUID(), ?, ?, ?)',
             [messageId, userId, emoji]);
           if (msg[0].sender_id !== userId) {
-          await createNotification(msg[0].sender_id, 'like', 'Cảm xúc tin nhắn', `Đã bày tỏ cảm xúc ${emoji}`, { messageId });
+            // Message reactions are Messenger domain — no notification created
           }
         }
 

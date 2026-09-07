@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -183,18 +184,52 @@ class NotificationProvider extends ChangeNotifier {
   final ApiService _api = ApiService();
   List<NotificationItem> _notifications = [];
   int _unreadCount = 0;
+  bool _loading = false;
+  bool _error = false;
+  StreamSubscription? _notifSub;
 
   List<NotificationItem> get notifications => _notifications;
   int get unreadCount => _unreadCount;
+  bool get loading => _loading;
+  bool get error => _error;
+
+  NotificationProvider() {
+    _notifSub = SocketService().onNotification.listen((data) {
+      // Realtime: push new notification (dedupe by id)
+      final item = NotificationItem.fromJson(data);
+      // Skip any Messenger-message-type data leaking in
+      if (item.type == 'message') return;
+      if (_notifications.any((n) => n.id == item.id)) return;
+      if (item.id.isEmpty) {
+        // No id from socket payload → refetch authoritative list
+        fetchNotifications();
+        return;
+      }
+      _notifications.insert(0, item);
+      _unreadCount++;
+      notifyListeners();
+    });
+  }
 
   Future<void> fetchNotifications() async {
+    _loading = true;
+    _error = false;
+    notifyListeners();
     try {
       final res = await _api.get('/notifications');
-      final list = (res['data']['notifications'] as List).map((e) => NotificationItem.fromJson(e)).toList();
+      final raw = (res['data']['notifications'] as List);
+      // Defensive: exclude legacy Messenger rows (type=message) — Messenger belongs to Chat module
+      final list = raw
+          .map((e) => NotificationItem.fromJson(e))
+          .where((n) => n.type != 'message')
+          .toList();
       _notifications = list;
       _unreadCount = list.where((n) => !n.isRead).length;
-      notifyListeners();
-    } catch (_) {}
+    } catch (_) {
+      _error = true;
+    }
+    _loading = false;
+    notifyListeners();
   }
 
   Future<void> markRead(String id) async {
@@ -207,5 +242,23 @@ class NotificationProvider extends ChangeNotifier {
       _unreadCount = _notifications.where((n) => !n.isRead).length;
       notifyListeners();
     } catch (_) {}
+  }
+
+  Future<void> markAllRead() async {
+    try {
+      await _api.patch('/notifications/read-all');
+      _notifications = _notifications.map((n) => NotificationItem(
+        id: n.id, type: n.type, title: n.title, body: n.body,
+        isRead: true, data: n.data, createdAt: n.createdAt,
+      )).toList();
+      _unreadCount = 0;
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _notifSub?.cancel();
+    super.dispose();
   }
 }
