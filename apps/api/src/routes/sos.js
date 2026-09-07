@@ -126,8 +126,9 @@ router.get('/helping', authenticate, async (req, res) => {
       FROM sos_responses sp
       JOIN sos_requests sr ON sr.id = sp.sos_id
       WHERE sp.provider_id = ?
+      AND sr.user_id != ?
     `;
-    const params = [req.user.id];
+    const params = [req.user.id, req.user.id];
     if (statusFilter && ['PENDING', 'ACCEPTED', 'DECLINED'].includes(statusFilter)) {
       sql += ' AND sp.status = ?';
       params.push(statusFilter);
