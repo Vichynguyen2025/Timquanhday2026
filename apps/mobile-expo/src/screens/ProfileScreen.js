@@ -178,7 +178,7 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.profileSection}>
           <TouchableOpacity onPress={handleEditAvatar} style={styles.avatarWrap}>
             {p?.avatar ? (
-              <Image source={{ uri: p.avatar }} style={styles.avatar} />
+              <Image key={p.avatar} source={{ uri: p.avatar }} style={styles.avatar} />
             ) : (
               <View style={[styles.avatar, styles.avatarPlaceholder]}>
                 <Text style={styles.avatarText}>{(p?.name || "?")[0].toUpperCase()}</Text>

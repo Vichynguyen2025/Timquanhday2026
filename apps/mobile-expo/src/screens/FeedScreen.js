@@ -525,6 +525,7 @@ export default function FeedScreen({ navigation }) {
         <FlatList
           data={dedupedPosts}
           keyExtractor={(item, index) => item.id ? `${item.id}-${index}` : String(index)}
+          extraData={user}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
           onEndReached={() => fetchPosts(true)}
