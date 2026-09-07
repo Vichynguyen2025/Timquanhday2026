@@ -44,6 +44,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return (Icons.chat_bubble_outline, AppTheme.primary, 'Bình luận');
       case 'sos':
         return (Icons.warning_amber_rounded, Colors.orange, 'SOS');
+      case 'nearby':
+        return (Icons.near_me, Colors.teal, 'Gần đây');
       case 'system':
         return (Icons.info_outline, AppTheme.secondary, 'Hệ thống');
       default:
