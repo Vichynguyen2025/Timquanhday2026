@@ -15,6 +15,7 @@ import notificationRoutes from './routes/notifications.js';
 import uploadRoutes from './routes/upload.js';
 import postRoutes, { setSocketIO } from './routes/posts.js';
 import sosRoutes, { setSocketIO as setSosSocketIO } from './routes/sos.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 app.set('trust proxy', true);
@@ -57,6 +58,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/sos', sosRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Pass io to routes
 setSocketIO(io);
