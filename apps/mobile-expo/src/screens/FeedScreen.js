@@ -9,6 +9,7 @@ import * as DocumentPicker from "expo-document-picker";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { colors } from "../theme/colors";
+import { useAuth } from "../contexts/AuthContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -159,6 +160,7 @@ function ImageGallery({ images, initialIndex, visible, onClose }) {
 // ─── Main FeedScreen ─────────────────────────────
 export default function FeedScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -405,13 +407,23 @@ export default function FeedScreen({ navigation }) {
   const renderPost = ({ item }) => {
     const media = getMediaArray(item);
     const dist = formatDistance(item.distance);
+    // If this post is by CURRENT USER, override with canonical AuthContext data
+    const isMyPost = user && item.user_id === user.id;
+    const authorName = isMyPost ? (user.name || item.user_name) : (item.user_name || "Người dùng");
+    const authorAvatar = isMyPost ? (user.avatar || item.user_avatar) : item.user_avatar;
     return (
       <View style={styles.post}>
         {/* Header */}
         <View style={styles.postHeader}>
-          <View style={styles.postAvatar}><Text style={styles.postAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text></View>
+          <View style={styles.postAvatar}>
+            {authorAvatar ? (
+              <Image source={{ uri: authorAvatar }} style={styles.postAvatarImg} />
+            ) : (
+              <Text style={styles.postAvatarText}>{(authorName || "?")[0].toUpperCase()}</Text>
+            )}
+          </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.postUserName} numberOfLines={1}>{item.user_name || "Người dùng"}</Text>
+            <Text style={styles.postUserName} numberOfLines={1}>{authorName}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
               {item.location_name && <Text style={styles.postLocation} numberOfLines={1}>{item.location_name}</Text>}
               {dist && <Text style={styles.postDistance}>📍 {dist}</Text>}
@@ -587,7 +599,11 @@ export default function FeedScreen({ navigation }) {
                     <View style={styles.commentItem}>
                       <View style={[styles.commentRow, { marginLeft: indent }]}>
                         <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }]}>
-                          <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+                          {item.user_avatar ? (
+                            <Image source={{ uri: item.user_avatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }} />
+                          ) : (
+                            <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+                          )}
                         </View>
                         <View style={{ flex: 1 }}>
                           <View style={[styles.commentBubble, { padding: bubblePad }]}>
@@ -721,6 +737,7 @@ const styles = StyleSheet.create({
   post: { borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5", backgroundColor: "#fff" },
   postHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10 },
   postAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 10 },
+  postAvatarImg: { width: 36, height: 36, borderRadius: 18 },
   postAvatarText: { fontSize: 14, fontWeight: "700", color: colors.primary },
   postUserName: { fontSize: 14, fontWeight: "600", color: "#000" },
   postLocation: { fontSize: 11, color: "#65676B" },

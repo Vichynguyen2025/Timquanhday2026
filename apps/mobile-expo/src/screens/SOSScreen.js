@@ -107,7 +107,11 @@ function SOSCard({ item, onRespond, onPress, isOwner }) {
     <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => onPress?.(item)}>
       <View style={styles.cardTop}>
         <View style={styles.cardAvatar}>
-          <Text style={styles.cardAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+          {item.user_avatar ? (
+            <Image source={{ uri: item.user_avatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+          ) : (
+            <Text style={styles.cardAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -578,10 +582,12 @@ export default function SOSScreen({ navigation }) {
               </View>
             }
             renderItem={({ item }) => {
-              const hasPending = (item.response_count || 0) > 0 && item.status === 'MATCHING';
+              // Override with canonical AuthContext data for current user's SOS
+              const sosItem = { ...item, user_name: user?.name || item.user_name, user_avatar: user?.avatar || item.user_avatar };
+              const hasPending = (sosItem.response_count || 0) > 0 && sosItem.status === 'MATCHING';
               return (
                 <View>
-                  <SOSCard item={item} onPress={openSOSDetail} isOwner />
+                  <SOSCard item={sosItem} onPress={openSOSDetail} isOwner />
                   {hasPending && (
                     <TouchableOpacity style={styles.providerBadge} onPress={() => openProviders(item)}>
                       <Ionicons name="people" size={16} color="#22C55E" />

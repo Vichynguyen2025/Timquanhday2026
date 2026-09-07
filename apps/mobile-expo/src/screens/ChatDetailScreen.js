@@ -384,7 +384,7 @@ export default function ChatDetailScreen({ route, navigation }) {
           </View>
         )}
         <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
-          {!isMine && !isImage && <View style={styles.msgAvatar}><Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text></View>}
+          {!isMine && !isImage && <View style={styles.msgAvatar}>{otherUser?.avatar ? <Image source={{ uri: otherUser.avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} /> : <Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text>}</View>}
           <View style={{ maxWidth: "82%" }}>
             {item.is_deleted ? (
               <Text style={[styles.deletedText, isMine && { textAlign: "right" }]}>{item.content}</Text>
@@ -459,7 +459,11 @@ export default function ChatDetailScreen({ route, navigation }) {
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
         <View style={styles.headerAvatar}>
-          <Text style={styles.headerAvatarText}>{initial}</Text>
+          {otherUser?.avatar ? (
+            <Image source={{ uri: otherUser.avatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+          ) : (
+            <Text style={styles.headerAvatarText}>{initial}</Text>
+          )}
           {isOnline && <View style={styles.headerOnline} />}
         </View>
         <View style={styles.headerInfo}>

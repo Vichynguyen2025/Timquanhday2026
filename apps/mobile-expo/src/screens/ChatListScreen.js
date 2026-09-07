@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Image } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -159,7 +159,11 @@ export default function ChatListScreen({ navigation }) {
             >
               <View style={styles.avatarWrap}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{(item.display_name || "?")[0].toUpperCase()}</Text>
+                  {item.avatar ? (
+                    <Image source={{ uri: item.avatar }} style={{ width: 52, height: 52, borderRadius: 26 }} />
+                  ) : (
+                    <Text style={styles.avatarText}>{(item.display_name || "?")[0].toUpperCase()}</Text>
+                  )}
                 </View>
                 {(() => {
                   const otherId = item.participants?.[0];
