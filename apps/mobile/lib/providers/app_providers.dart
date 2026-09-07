@@ -85,38 +85,45 @@ class ChatProvider extends ChangeNotifier {
   // ─── PERSISTENT socket listener — giống Web ChatPage.jsx dòng 251-317 ──
   ChatProvider() {
     _msgSub = _socket.onMessage.listen((data) {
-      final convId = data['conversation_id']?.toString();
-      if (convId == null) return;
+      try {
+        final convId = data['conversation_id']?.toString();
+        if (convId == null) return;
 
-      // #A — Bỏ qua self-message (giống Web: if (msg.sender_id === user?.id) return)
-      if (data['sender_id'] == _currentUserId) return;
+        // #A — Bỏ qua self-message
+        if (data['sender_id'] == _currentUserId) return;
 
-      final msg = Message.fromJson(data);
+        debugPrint('[CHAT_PROVIDER] message:new conv=$convId sender=${data['sender_id']} content=${(data['content'] as String?)?.length ?? 0}chars');
 
-      // #B — Update messages cache nếu conv đang được load (giống Web dòng 256-266)
-      if (_messagesCache.containsKey(convId)) {
-        addIncomingMessage(convId, msg);
-      }
+        final msg = Message.fromJson(data);
 
-      // #C — LUÔN update conversation list (giống Web dòng 267-285)
-      final convIdx = _conversations.indexWhere((c) => c.id == convId);
-      if (convIdx >= 0) {
-        final old = _conversations[convIdx];
-        _conversations[convIdx] = Conversation(
-          id: old.id, type: old.type, name: old.name,
-          lastMessage: msg.content.isEmpty ? '📷 Ảnh' : msg.content,
-          lastMessageAt: msg.createdAt,
-          unreadCount: old.unreadCount + 1,
-          displayName: old.displayName, avatar: old.avatar,
-          isOnline: old.isOnline, participants: old.participants,
-        );
-        _conversations.sort((a, b) => (b.lastMessageAt ?? '').compareTo(a.lastMessageAt ?? ''));
+        // #B — Update messages cache nếu conv đang được load
+        if (_messagesCache.containsKey(convId)) {
+          addIncomingMessage(convId, msg);
+        }
+
+        // #C — LUÔN update conversation list
+        final convIdx = _conversations.indexWhere((c) => c.id == convId);
+        if (convIdx >= 0) {
+          final old = _conversations[convIdx];
+          _conversations[convIdx] = Conversation(
+            id: old.id, type: old.type, name: old.name,
+            lastMessage: msg.content.isEmpty ? '📷 Ảnh' : msg.content,
+            lastMessageAt: msg.createdAt,
+            unreadCount: old.unreadCount + 1,
+            displayName: old.displayName, avatar: old.avatar,
+            isOnline: old.isOnline, participants: old.participants,
+          );
+          _conversations.sort((a, b) => (b.lastMessageAt ?? '').compareTo(a.lastMessageAt ?? ''));
+          debugPrint('[CHAT_PROVIDER] updated conv ${convId.substring(0, 8)} last="${msg.content.substring(0, 20)}" sort=1');
+        }
         _unreadMessageCount++;
-      } else {
-        _unreadMessageCount++;
+        notifyListeners();
+        debugPrint('[CHAT_PROVIDER] notifyListeners called');
+      } catch (e) {
+        debugPrint('[CHAT_PROVIDER] ERROR in listener: $e');
       }
-      notifyListeners();
     });
+    debugPrint('[CHAT_PROVIDER] socket listener registered');
   }
 
   @override
