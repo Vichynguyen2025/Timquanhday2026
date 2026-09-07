@@ -23,16 +23,21 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     const data = res.data;
-    // Verify admin role
-    const me = await api.get('/auth/me');
-    const adminCheck = await api.get('/admin/admins').catch(() => null);
-    // Check if user is an admin
-    const admins = adminCheck?.data || [];
-    const isAdmin = admins.some(a => a.user_id === me.data.id);
-    if (!isAdmin) throw new Error('Not an admin');
+    // Store token FIRST before making auth-requiring calls
     localStorage.setItem('admin_token', data.accessToken);
     localStorage.setItem('admin_user', JSON.stringify(data.user));
     setUser(data.user);
+    // Verify admin role
+    const me = await api.get('/auth/me');
+    const adminCheck = await api.get('/admin/admins').catch(() => null);
+    const admins = adminCheck?.data || [];
+    if (!admins.some(a => a.user_id === me.data.id)) {
+      // Not an admin - rollback
+      localStorage.removeItem('admin_token');
+      localStorage.removeItem('admin_user');
+      setUser(null);
+      throw new Error('Not an admin');
+    }
     return data;
   };
 
