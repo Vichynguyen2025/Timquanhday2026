@@ -9,6 +9,9 @@ import SosPage from './pages/SosPage';
 import SosDetailPage from './pages/SosDetailPage';
 import MessagesPage from './pages/MessagesPage';
 import NotificationsPage from './pages/NotificationsPage';
+import ReportsPage from './pages/ReportsPage';
+import AdminsPage from './pages/AdminsPage';
+import AuditLogsPage from './pages/AuditLogsPage';
 import Layout from './components/Layout';
 
 function ProtectedRoute({ children }) {
@@ -30,6 +33,9 @@ function AppRoutes() {
         <Route path="sos/:id" element={<SosDetailPage />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="admins" element={<AdminsPage />} />
+        <Route path="audit-logs" element={<AuditLogsPage />} />
       </Route>
     </Routes>
   );
