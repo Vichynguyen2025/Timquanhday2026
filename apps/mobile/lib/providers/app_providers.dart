@@ -66,13 +66,64 @@ class ChatProvider extends ChangeNotifier {
   Map<String, bool> _hasMoreCache = {};
   Map<String, ConversationMember?> _otherUserCache = {};
   bool _loadingConversations = false;
+  StreamSubscription? _msgSub;
+  String? _currentUserId;
+  int _unreadMessageCount = 0;
+
+  set currentUserId(String? id) {
+    _currentUserId = id;
+  }
 
   List<Conversation> get conversations => _conversations;
   bool get loadingConversations => _loadingConversations;
+  int get unreadMessageCount => _unreadMessageCount;
 
   List<Message> getMessages(String convId) => _messagesCache[convId] ?? [];
   bool hasMore(String convId) => _hasMoreCache[convId] ?? true;
   ConversationMember? getOtherUser(String convId) => _otherUserCache[convId];
+
+  // ─── PERSISTENT socket listener — giống Web ChatPage.jsx dòng 251-317 ──
+  ChatProvider() {
+    _msgSub = _socket.onMessage.listen((data) {
+      final convId = data['conversation_id']?.toString();
+      if (convId == null) return;
+
+      // #A — Bỏ qua self-message (giống Web: if (msg.sender_id === user?.id) return)
+      if (data['sender_id'] == _currentUserId) return;
+
+      final msg = Message.fromJson(data);
+
+      // #B — Update messages cache nếu conv đang được load (giống Web dòng 256-266)
+      if (_messagesCache.containsKey(convId)) {
+        addIncomingMessage(convId, msg);
+      }
+
+      // #C — LUÔN update conversation list (giống Web dòng 267-285)
+      final convIdx = _conversations.indexWhere((c) => c.id == convId);
+      if (convIdx >= 0) {
+        final old = _conversations[convIdx];
+        _conversations[convIdx] = Conversation(
+          id: old.id, type: old.type, name: old.name,
+          lastMessage: msg.content.isEmpty ? '📷 Ảnh' : msg.content,
+          lastMessageAt: msg.createdAt,
+          unreadCount: old.unreadCount + 1,
+          displayName: old.displayName, avatar: old.avatar,
+          isOnline: old.isOnline, participants: old.participants,
+        );
+        _conversations.sort((a, b) => (b.lastMessageAt ?? '').compareTo(a.lastMessageAt ?? ''));
+        _unreadMessageCount++;
+      } else {
+        _unreadMessageCount++;
+      }
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _msgSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> fetchConversations() async {
     _loadingConversations = true;
