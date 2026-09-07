@@ -1,13 +1,18 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { getSocket } from "../services/socket";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
+import { useSocket } from "./SocketContext";
 import api from "../services/api";
 
 const BadgeContext = createContext(null);
 
+// Track seen message IDs to prevent double-count
+const seenIds = new Set();
+
 export function BadgeProvider({ children }) {
+  const { socket } = useSocket();
   const [messageUnread, setMessageUnread] = useState(0);
   const [notificationUnread, setNotificationUnread] = useState(0);
   const [sosUnread, setSosUnread] = useState(0);
+  const listenersRegistered = useRef(false);
 
   // ─── Fetch all unread counts from server ────────
   const reconcileAll = useCallback(async () => {
@@ -23,21 +28,32 @@ export function BadgeProvider({ children }) {
     } catch (e) {}
   }, []);
 
-  // ─── Global socket listeners (always active) ─────
+  // ─── Register socket listeners when socket is available ──
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
+    if (!socket) {
+      listenersRegistered.current = false;
+      return;
+    }
+
+    // Avoid double registration
+    if (listenersRegistered.current) return;
+    listenersRegistered.current = true;
 
     // Initial reconcile
     reconcileAll();
 
     // Message: new message from others → +1
     socket.on("message:new", (msg) => {
-      // Only increment if message is NOT from a notification/event
-      if (msg && msg.sender_id) {
-        // We rely on reconcile for accuracy after app wakes
-        setMessageUnread(prev => prev + 1);
+      if (!msg || !msg.id) return;
+      // Dedup: prevent double-count from room + user events
+      if (seenIds.has(msg.id)) return;
+      seenIds.add(msg.id);
+      // Limit seenIds size to prevent memory leak
+      if (seenIds.size > 200) {
+        const iter = seenIds.values();
+        for (let i = 0; i < 50; i++) seenIds.delete(iter.next().value);
       }
+      setMessageUnread(prev => prev + 1);
     });
 
     // Message: conversation read → recalculate
@@ -72,13 +88,12 @@ export function BadgeProvider({ children }) {
       socket.off("sos:new");
       socket.off("sos:response");
       socket.off("connect");
+      listenersRegistered.current = false;
     };
-  }, [reconcileAll]);
+  }, [socket, reconcileAll]);
 
   // ─── App foreground → reconcile ──────────────────
   useEffect(() => {
-    const handleAppState = () => reconcileAll();
-    // Listen for app state changes if available
     const { AppState } = require("react-native");
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") reconcileAll();
