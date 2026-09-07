@@ -2,70 +2,88 @@ import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import {
   FiUsers, FiMessageSquare, FiBell, FiAlertCircle, FiActivity,
-  FiCheckCircle, FiUserPlus, FiFileText, FiLock, FiFlag,
-  FiClock, FiMessageCircle
+  FiCheckCircle, FiUserPlus, FiFileText, FiLock, FiClock,
+  FiMessageCircle, FiGlobe
 } from 'react-icons/fi';
 
-const CARD_COLORS = [
-  { bg: 'bg-blue-500' }, { bg: 'bg-green-500' }, { bg: 'bg-cyan-500' },
-  { bg: 'bg-red-500' }, { bg: 'bg-amber-500' }, { bg: 'bg-purple-500' },
-  { bg: 'bg-emerald-500' }, { bg: 'bg-indigo-500' }, { bg: 'bg-pink-500' },
-  { bg: 'bg-teal-500' }, { bg: 'bg-orange-500' }, { bg: 'bg-violet-500' },
-  { bg: 'bg-rose-500' }, { bg: 'bg-sky-500' }, { bg: 'bg-lime-500' },
-  { bg: 'bg-gray-600' },
-];
-
-function StatCard({ icon: Icon, label, value, color }) {
-  return (
-    <div className="card flex items-center gap-4">
-      <div className={`p-3 rounded-lg ${color}`}><Icon size={24} className="text-white" /></div>
-      <div>
-        <div className="stat">{value ?? '—'}</div>
-        <div className="stat-label">{label}</div>
-      </div>
+const StatCard = ({ icon: Icon, label, value, color }) => (
+  <div className="card flex items-center gap-4 hover:bg-white/[0.03] transition-colors">
+    <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${color}20` }}>
+      <Icon size={20} style={{ color }} />
     </div>
-  );
-}
+    <div className="min-w-0">
+      <div className="stat">{value ?? '—'}</div>
+      <div className="stat-label truncate">{label}</div>
+    </div>
+  </div>
+);
+
+const COLORS = [
+  '#5e6ad2', '#10b981', '#06b6d4', '#f59e0b',
+  '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6',
+  '#f97316', '#6366f1', '#84cc16', '#e11d48',
+  '#38bdf8', '#a855f7', '#d946ef', '#22d3ee',
+];
 
 export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/admin/dashboard').then((r) => setStats(r.data)).catch(() => {}).finally(() => setLoading(false));
+    api.get('/admin/dashboard').then(r => setStats(r.data)).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="flex justify-center pt-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" /></div>;
+  if (loading) return (
+    <div className="flex justify-center pt-32">
+      <div className="w-7 h-7 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+    </div>
+  );
 
   const cards = [
-    { icon: FiUsers, label: 'Tổng người dùng', value: stats?.totalUsers, color: CARD_COLORS[0].bg },
-    { icon: FiActivity, label: 'Đang online', value: stats?.onlineUsers, color: CARD_COLORS[1].bg },
-    { icon: FiUserPlus, label: 'Hôm nay', value: stats?.newToday, color: CARD_COLORS[2].bg },
-    { icon: FiLock, label: 'Đã khóa', value: stats?.lockedUsers, color: CARD_COLORS[3].bg },
-    { icon: FiMessageSquare, label: 'Tin nhắn', value: stats?.totalMessages, color: CARD_COLORS[4].bg },
-    { icon: FiClock, label: 'Tin nhắn hôm nay', value: stats?.todayMessages, color: CARD_COLORS[5].bg },
-    { icon: FiMessageCircle, label: 'Hội thoại', value: stats?.activeConversations, color: CARD_COLORS[6].bg },
-    { icon: FiBell, label: 'Thông báo', value: stats?.totalNotifications, color: CARD_COLORS[7].bg },
-    { icon: FiAlertCircle, label: 'SOS đang hoạt động', value: stats?.activeSos, color: CARD_COLORS[8].bg },
-    { icon: FiCheckCircle, label: 'SOS đã xử lý', value: stats?.resolvedSos, color: CARD_COLORS[9].bg },
-    { icon: FiUsers, label: 'Đang hỗ trợ', value: stats?.beingHelped, color: CARD_COLORS[10].bg },
-    { icon: FiFlag, label: 'SOS hôm nay', value: stats?.todaySos, color: CARD_COLORS[11].bg },
-    { icon: FiFileText, label: 'Bài viết', value: stats?.totalPosts, color: CARD_COLORS[12].bg },
-    { icon: FiFileText, label: 'Báo cáo', value: stats?.totalReports, color: CARD_COLORS[13].bg },
-    { icon: FiFlag, label: 'Báo cáo chờ', value: stats?.pendingReports, color: CARD_COLORS[14].bg },
+    { icon: FiUsers, label: 'Tổng người dùng', value: stats?.totalUsers, color: COLORS[0] },
+    { icon: FiActivity, label: 'Đang online', value: stats?.onlineUsers, color: COLORS[1] },
+    { icon: FiUserPlus, label: 'Hôm nay', value: stats?.newToday, color: COLORS[2] },
+    { icon: FiLock, label: 'Đã khóa', value: stats?.lockedUsers, color: COLORS[3] },
+    { icon: FiMessageSquare, label: 'Tin nhắn', value: stats?.totalMessages, color: COLORS[4] },
+    { icon: FiClock, label: 'Tin nhắn hôm nay', value: stats?.todayMessages, color: COLORS[5] },
+    { icon: FiMessageCircle, label: 'Hội thoại', value: stats?.activeConversations, color: COLORS[6] },
+    { icon: FiBell, label: 'Thông báo', value: stats?.totalNotifications, color: COLORS[7] },
+    { icon: FiAlertCircle, label: 'SOS hoạt động', value: stats?.activeSos, color: COLORS[8] },
+    { icon: FiCheckCircle, label: 'SOS đã xử lý', value: stats?.resolvedSos, color: COLORS[9] },
+    { icon: FiUsers, label: 'Đang hỗ trợ', value: stats?.beingHelped, color: COLORS[10] },
+    { icon: FiAlertCircle, label: 'SOS hôm nay', value: stats?.todaySos, color: COLORS[11] },
+    { icon: FiGlobe, label: 'Bài viết', value: stats?.totalPosts, color: COLORS[12] },
+    { icon: FiFileText, label: 'Báo cáo', value: stats?.totalReports, color: COLORS[13] },
   ];
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="flex items-center gap-3 mb-8">
+        <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+          style={{ background: 'rgba(94,106,210,0.15)' }}>
+          <FiGrid size={18} style={{ color: 'var(--accent-light)' }} />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>Dashboard</h1>
+          <p className="text-xs" style={{ color: 'var(--text-quaternary)' }}>Tổng quan hệ thống</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {cards.map((c, i) => <StatCard key={i} {...c} />)}
       </div>
-      <div className="mt-6 card">
-        <h2 className="font-semibold text-gray-700 mb-2">Hệ thống</h2>
-        <p className="text-sm text-gray-500">
-          MySQL: timquanhday · 25 tables · API: tqd-api (port 3001) · Socket.IO (/ws) · CMS: cms.timquanhday.de
-        </p>
+      <div className="card mt-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.05)' }}>
+            <FiGlobe size={16} style={{ color: 'var(--text-quaternary)' }} />
+          </div>
+          <div>
+            <p className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Hệ thống</p>
+            <p className="text-[11px]" style={{ color: 'var(--text-quaternary)' }}>
+              MySQL · 25 tables · API tqd-api · Socket.IO /ws
+            </p>
+          </div>
+        </div>
+        <span className="chip active" style={{ cursor: 'default' }}>cms.timquanhday.de</span>
       </div>
     </div>
   );
