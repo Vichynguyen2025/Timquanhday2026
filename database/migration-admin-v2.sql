@@ -1,9 +1,11 @@
 -- CMS Phase 2: Enhanced admin tables
--- collation uses utf8mb4_unicode_ci to match existing users table
+-- Also fix collation on existing tables to match users (utf8mb4_unicode_ci)
 
 ALTER TABLE users
   ADD COLUMN is_locked tinyint(1) NOT NULL DEFAULT 0
   AFTER is_online;
+
+ALTER TABLE user_blocks CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS reports (
   id VARCHAR(36) PRIMARY KEY,
