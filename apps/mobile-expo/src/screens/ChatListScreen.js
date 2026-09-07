@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { useSocket } from "../contexts/SocketContext";
+import { useBadge } from "../contexts/BadgeContext";
 import { colors } from "../theme/colors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -13,28 +14,48 @@ import { vi } from "date-fns/locale";
 export default function ChatListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { onlineUsers } = useSocket();
+  const { setMessageUnread } = useBadge();
   const [conversations, setConversations] = useState([]);
   const [blockedConversations, setBlockedConversations] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [totalUnread, setTotalUnread] = useState(0);
 
   useFocusEffect(useCallback(() => {
     fetchConversations();
+    fetchUnreadCount();
+    // Get current user id
+    api.get("/auth/me").then(r => setCurrentUserId(r.data.id)).catch(() => {});
     const socket = getSocket();
     if (!socket) return;
     const handler = (msg) => {
       setConversations((prev) => {
+        // Only increment unread if message is NOT from current user
+        const isFromOthers = msg.sender_id && msg.sender_id !== currentUserId;
         const updated = prev.map((c) =>
           c.id === msg.conversation_id
-            ? { ...c, last_message: msg.content || (msg.type === "image" ? "📷 Hình ảnh" : c.last_message), last_message_at: msg.created_at, unread_count: (c.unread_count || 0) + 1 }
+            ? { ...c, last_message: msg.content || (msg.type === "image" ? "📷 Hình ảnh" : c.last_message), last_message_at: msg.created_at, unread_count: (c.unread_count || 0) + (isFromOthers ? 1 : 0) }
             : c
         );
         return updated.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
       });
+      if (msg.sender_id && msg.sender_id !== currentUserId) {
+        setTotalUnread(prev => prev + 1);
+        setMessageUnread(prev => prev + 1);
+      }
     };
     socket.on("message:new", handler);
     return () => socket.off("message:new", handler);
-  }, []));
+  }, [currentUserId]));
+
+  async function fetchUnreadCount() {
+    try {
+      const res = await api.get("/messages/unread-count");
+      setTotalUnread(res.data.count || 0);
+      setMessageUnread(res.data.count || 0);
+    } catch (e) {}
+  }
 
   async function fetchConversations() {
     try {

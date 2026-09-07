@@ -12,10 +12,10 @@ router.get('/', authenticate, async (req, res) => {
       SELECT c.*,
         (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at,
-        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ?) as unread_count
+        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND m.sender_id != ? AND NOT EXISTS (SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.user_id = ?)) as unread_count
       FROM conversations c
       JOIN conversation_members cm ON c.id = cm.conversation_id AND cm.user_id = ? AND cm.deleted_at IS NULL
-      ORDER BY COALESCE(last_message_at, c.created_at) DESC`, [req.user.id, req.user.id]
+      ORDER BY COALESCE(last_message_at, c.created_at) DESC`, [req.user.id, req.user.id, req.user.id]
     );
 
     // Get participant info for each conversation

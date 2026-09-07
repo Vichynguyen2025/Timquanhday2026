@@ -3,6 +3,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
+import { useBadge } from "../contexts/BadgeContext";
 import LoginScreen from "../screens/LoginScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import ChatListScreen from "../screens/ChatListScreen";
@@ -22,6 +23,8 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 function HomeTabs() {
+  const { messageUnread, notificationUnread } = useBadge();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -47,7 +50,11 @@ function HomeTabs() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
       })}
     >
-      <Tab.Screen name="Chat" component={ChatListScreen} />
+      <Tab.Screen
+        name="Chat"
+        component={ChatListScreen}
+        options={{ tabBarBadge: messageUnread > 0 ? (messageUnread > 99 ? "99+" : messageUnread) : undefined }}
+      />
       <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen
         name="SOS"
@@ -63,7 +70,11 @@ function HomeTabs() {
           ),
         }}
       />
-      <Tab.Screen name="Notifications" component={NotificationsScreen} />
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ tabBarBadge: notificationUnread > 0 ? (notificationUnread > 99 ? "99+" : notificationUnread) : undefined }}
+      />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );

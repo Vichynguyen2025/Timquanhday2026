@@ -5,6 +5,21 @@ import { createNotification } from '../utils/helpers.js';
 
 const router = Router();
 
+// ─── GET /api/messages/unread-count — Total unread messages ──
+router.get('/unread-count', authenticate, async (req, res) => {
+  try {
+    const [result] = await query(`
+      SELECT COUNT(*) as count FROM messages m
+      JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = ? AND cm.deleted_at IS NULL
+      WHERE m.sender_id != ?
+      AND NOT EXISTS (SELECT 1 FROM message_reads mr WHERE mr.message_id = m.id AND mr.user_id = ?)
+    `, [req.user.id, req.user.id, req.user.id]);
+    res.json({ count: result.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get messages with cursor pagination
 router.get('/:conversationId', authenticate, async (req, res) => {
   try {

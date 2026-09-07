@@ -4,6 +4,19 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
+// ─── GET /api/notifications/unread-count — Total unread notifications ──
+router.get('/unread-count', authenticate, async (req, res) => {
+  try {
+    const [result] = await query(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE',
+      [req.user.id]
+    );
+    res.json({ count: result.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get notifications
 router.get('/', authenticate, async (req, res) => {
   try {
