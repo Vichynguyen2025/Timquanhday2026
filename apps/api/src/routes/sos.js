@@ -149,6 +149,48 @@ router.get('/helping', authenticate, async (req, res) => {
   }
 });
 
+// ─── POST /api/sos/helping/conversation — Get conversation for accepted SOS ──
+router.post('/helping/conversation', authenticate, async (req, res) => {
+  try {
+    const { responseId } = req.body;
+    if (!responseId) return res.status(400).json({ error: 'responseId required' });
+
+    // Get the response + SOS
+    const resp = await queryOne(`
+      SELECT sp.*, sr.user_id as sos_owner_id
+      FROM sos_responses sp
+      JOIN sos_requests sr ON sr.id = sp.sos_id
+      WHERE sp.id = ?
+    `, [responseId]);
+    if (!resp) return res.status(404).json({ error: 'Response not found' });
+    if (resp.provider_id !== req.user.id) return res.status(403).json({ error: 'Not your response' });
+    if (resp.status !== 'ACCEPTED') return res.status(400).json({ error: 'Response not accepted yet' });
+
+    // Resolve or create private conversation
+    const existingConv = await queryOne(`
+      SELECT c.id FROM conversations c
+      JOIN conversation_members cm1 ON c.id = cm1.conversation_id AND cm1.user_id = ?
+      JOIN conversation_members cm2 ON c.id = cm2.conversation_id AND cm2.user_id = ?
+      WHERE c.type = 'private'
+    `, [resp.provider_id, resp.sos_owner_id]);
+
+    let conversationId;
+    if (existingConv) {
+      conversationId = existingConv.id;
+    } else {
+      conversationId = crypto.randomUUID();
+      await query('INSERT INTO conversations (id, type) VALUES (?, ?)', [conversationId, 'private']);
+      await query('INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+        [conversationId, resp.provider_id, conversationId, resp.sos_owner_id]);
+    }
+
+    res.json({ conversation_id: conversationId, sos_owner_id: resp.sos_owner_id });
+  } catch (err) {
+    console.error('[SOS] Helping conversation error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ─── GET /api/sos/helper/profile — Helper profile ──
 router.get('/helper/profile', authenticate, async (req, res) => {
   try {

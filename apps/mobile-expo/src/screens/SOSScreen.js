@@ -652,15 +652,19 @@ export default function SOSScreen({ navigation }) {
                     {item.response_status === "ACCEPTED" && item.response_id && (
                       <TouchableOpacity
                         style={styles.helpingChatBtn}
-                        onPress={() => {
-                          // Find the conversation ID from the SOS responses
-                          const acceptedResp = item.responses?.find(r => r.status === "ACCEPTED");
-                          if (acceptedResp) {
-                            setShowProviders(false);
-                            navigation?.navigate("ChatDetail", {
-                              conversationId: item.conversation_id || "",
-                              name: item.user_name || "Người hỗ trợ",
-                            });
+                        onPress={async () => {
+                          try {
+                            const res = await api.post("/sos/helping/conversation", { responseId: item.response_id });
+                            const data = res.data;
+                            if (data.conversation_id) {
+                              navigation?.navigate("ChatDetail", {
+                                conversationId: data.conversation_id,
+                                name: item.user_name || "Người hỗ trợ",
+                              });
+                            }
+                          } catch (e) {
+                            const msg = e?.response?.data?.error || "Không thể mở tin nhắn";
+                            Alert.alert("Lỗi", msg);
                           }
                         }}
                       >
