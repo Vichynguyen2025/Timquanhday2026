@@ -6,6 +6,7 @@ import 'services/socket_service.dart';
 import 'services/api_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
+import 'screens/auth/splash_screen.dart';
 import 'screens/chat/chat_list_screen.dart';
 import 'screens/feed/feed_screen.dart';
 import 'screens/location/location_screen.dart';
@@ -38,61 +39,6 @@ class TimQuanhDayApp extends StatelessWidget {
           '/register': (context) => const RegisterScreen(),
           '/home': (context) => const HomeScreen(),
         },
-      ),
-    );
-  }
-}
-
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    _checkAuth();
-  }
-
-  Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    final auth = context.read<AuthProvider>();
-    if (auth.isLoggedIn) {
-      // Connect socket
-      final token = await ApiService().getToken();
-      if (token != null) {
-        SocketService().connect(token);
-      }
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Icon(Icons.chat_bubble_rounded, size: 40, color: AppTheme.primary),
-            ),
-            const SizedBox(height: 16),
-            const Text('TimQuanhDay', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-            const SizedBox(height: 24),
-            const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
-          ],
-        ),
       ),
     );
   }
