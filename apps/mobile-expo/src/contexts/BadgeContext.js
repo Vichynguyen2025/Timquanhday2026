@@ -13,6 +13,14 @@ export function BadgeProvider({ children }) {
   const [notificationUnread, setNotificationUnread] = useState(0);
   const [sosUnread, setSosUnread] = useState(0);
   const listenersRegistered = useRef(false);
+  // Track the conversation currently open on screen
+  const activeConversationRef = useRef(null);
+  const [activeConversation, setActiveConversationState] = useState(null);
+
+  const setActiveConversation = useCallback((id) => {
+    activeConversationRef.current = id;
+    setActiveConversationState(id);
+  }, []);
 
   // ─── Fetch all unread counts from server ────────
   const reconcileAll = useCallback(async () => {
@@ -42,9 +50,13 @@ export function BadgeProvider({ children }) {
     // Initial reconcile
     reconcileAll();
 
-    // Message: new message from others → +1
+    // Message: new message from others → +1 (unless viewing that conversation)
     socket.on("message:new", (msg) => {
       if (!msg || !msg.id) return;
+      // If user is viewing this conversation, message is auto-read - no increment
+      if (activeConversationRef.current === msg.conversation_id) {
+        return;
+      }
       // Dedup: prevent double-count from room + user events
       if (seenIds.has(msg.id)) return;
       seenIds.add(msg.id);
@@ -107,6 +119,7 @@ export function BadgeProvider({ children }) {
         messageUnread, setMessageUnread,
         notificationUnread, setNotificationUnread,
         sosUnread, setSosUnread,
+        activeConversation, setActiveConversation,
         reconcileAll,
       }}
     >

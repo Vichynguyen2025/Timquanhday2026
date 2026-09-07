@@ -2,22 +2,31 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import * as Location from "expo-location";
 import { AppState } from "react-native";
 import { useAuth } from "./AuthContext";
-import { getSocket } from "../services/socket";
+import { useSocket } from "./SocketContext";
 import api from "../services/api";
 
 const LocationContext = createContext(null);
 
 export function LocationProvider({ children }) {
   const { user } = useAuth();
+  const { socket } = useSocket();
   const [currentLocation, setCurrentLocation] = useState(null);
   const [permissionStatus, setPermissionStatus] = useState("unknown");
   const [gpsStatus, setGpsStatus] = useState("Đang xác định vị trí...");
   const lastSentRef = useRef(null);
   const appStateRef = useRef(AppState.currentState);
 
+  // Check if user has enabled location sharing
+  const isLocationEnabled = user?.location_enabled !== false;
+
   // ─── Request permission & get initial GPS ──────
   const refreshLocation = useCallback(async () => {
     if (!user) return;
+    // Respect user's location_enabled preference
+    if (!isLocationEnabled) {
+      setGpsStatus("Đã tắt chia sẻ vị trí");
+      return;
+    }
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setPermissionStatus(status);
@@ -48,7 +57,7 @@ export function LocationProvider({ children }) {
     } catch (e) {
       setGpsStatus("Chưa lấy được vị trí");
     }
-  }, [user]);
+  }, [user, isLocationEnabled]);
 
   // ─── On mount: get GPS when user is authenticated ──
   useEffect(() => {
@@ -75,10 +84,9 @@ export function LocationProvider({ children }) {
 
   // ─── Socket reconnect → sync location ──────────
   useEffect(() => {
-    const socket = getSocket();
     if (!socket) return;
     const onReconnect = () => {
-      if (user && currentLocation) {
+      if (user && isLocationEnabled && currentLocation) {
         api.post("/location/update", {
           lat: currentLocation.latitude,
           lng: currentLocation.longitude,
@@ -88,10 +96,10 @@ export function LocationProvider({ children }) {
     };
     socket.on("connect", onReconnect);
     return () => { socket.off("connect", onReconnect); };
-  }, [user, currentLocation]);
+  }, [user, socket, isLocationEnabled, currentLocation]);
 
   return (
-    <LocationContext.Provider value={{ currentLocation, permissionStatus, gpsStatus, refreshLocation }}>
+    <LocationContext.Provider value={{ currentLocation, permissionStatus, gpsStatus, refreshLocation, isLocationEnabled }}>
       {children}
     </LocationContext.Provider>
   );

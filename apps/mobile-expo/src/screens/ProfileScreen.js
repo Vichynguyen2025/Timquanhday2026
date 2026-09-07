@@ -51,20 +51,21 @@ export default function ProfileScreen({ navigation }) {
   async function toggleSosProvider(value) {
     setSosToggleLoading(true);
     try {
+      // If enabling and no categories selected yet, register with all defaults
+      let categoryIds = profile?.service_profile?.categories?.map(c => c.id) || [];
+      let serviceRadius = profile?.service_profile?.service_radius || 1000;
+      if (value && categoryIds.length === 0) {
+        categoryIds = ["cat-sua-xe", "cat-khac"];
+      }
       const res = await api.put("/sos/helper/profile", {
         is_provider: true,
         is_available: value,
-        service_radius: profile?.service_profile?.service_radius || 1000,
-        category_ids: profile?.service_profile?.categories?.map(c => c.id) || [],
+        service_radius: serviceRadius,
+        category_ids: categoryIds,
       });
       setProfile(prev => prev ? {
         ...prev,
-        service_profile: {
-          ...prev.service_profile,
-          is_provider: true,
-          is_available: value,
-          ...res.data,
-        },
+        service_profile: res.data,
       } : prev);
     } catch (e) {
       Alert.alert("Lỗi", "Không thể thay đổi cài đặt hỗ trợ SOS");
@@ -191,7 +192,6 @@ export default function ProfileScreen({ navigation }) {
             <ToggleItem
               icon="hand-left-outline" label="Nhận hỗ trợ SOS" value={sp?.is_provider && sp?.is_available}
               onToggle={toggleSosProvider} loading={sosToggleLoading}
-              disabled={!sp?.is_provider}
             />
             {sp?.is_provider && (
               <>

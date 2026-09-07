@@ -266,6 +266,11 @@ export function setupSocket(io) {
           await query(`INSERT IGNORE INTO message_reads (message_id, user_id)
             SELECT m.id, ? FROM messages m WHERE m.conversation_id = ? AND m.sender_id != ?`,
             [userId, conversationId, userId]);
+          // Broadcast to all sockets of the sender that messages are read
+          const senders = await query('SELECT DISTINCT sender_id FROM messages WHERE conversation_id = ? AND sender_id != ?', [conversationId, userId]);
+          for (const s of senders) {
+            io.to(`user:${s.sender_id}`).emit('message:read', { conversationId, readerId: userId });
+          }
         }
       } catch (err) {}
     });

@@ -7,6 +7,7 @@ import api from "../services/api";
 import { getSocket } from "../services/socket";
 import { useAuth } from "../contexts/AuthContext";
 import { useSocket } from "../contexts/SocketContext";
+import { useBadge } from "../contexts/BadgeContext";
 import { colors } from "../theme/colors";
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
@@ -19,6 +20,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   const { conversationId, name } = route.params;
   const { user } = useAuth();
   const { onlineUsers } = useSocket();
+  const { setActiveConversation } = useBadge();
   const insets = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -54,6 +56,8 @@ export default function ChatDetailScreen({ route, navigation }) {
   }
 
   useEffect(() => {
+    // Mark this conversation as active for badge tracking
+    setActiveConversation(conversationId);
     fetchMessages();
     api.get("/conversations/" + conversationId).then((res) => {
       const members = res.data?.members || [];
@@ -105,6 +109,8 @@ export default function ChatDetailScreen({ route, navigation }) {
       socket.on("message:reaction", onReact); socket.on("user:typing", onType);
       socket.on("user:stop-typing", onStop);
       return () => {
+        // Clear active conversation for badge tracking
+        setActiveConversation(null);
         showSub.remove();
         hideSub.remove();
         socket.off("message:new", onMsg); socket.off("message:deleted", onDel);
