@@ -566,7 +566,7 @@ export default function SOSScreen({ navigation }) {
             />
           )}
         </View>
-      ) : (
+      ) : tab === "sos" ? (
         /* My SOS tab */
         loading ? (
           <View style={{ paddingTop: 20 }}><ActivityIndicator color={colors.primary} /></View>
@@ -606,7 +606,7 @@ export default function SOSScreen({ navigation }) {
             }}
           />
         )
-      )}
+      ) : null}
 
       {/* Helping tab — SOS I've offered to help */}
       {tab === "helping" && (
