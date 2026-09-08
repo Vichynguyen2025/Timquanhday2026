@@ -17,7 +17,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const EMOJIS = ["👍", "❤️", "🔥", "😂", "😍", "🎉", "💯", "✨", "🚀", "🙌", "👏", "😢", "😡", "💪", "🤝"];
 
 export default function ChatDetailScreen({ route, navigation }) {
-  const { conversationId, name } = route.params;
+  const { conversationId, name, type } = route.params;
+  const isGroup = type === "group" || route.params?.type === "group";
   const { user } = useAuth();
   const { onlineUsers } = useSocket();
   const { setActiveConversation } = useBadge();
@@ -60,20 +61,28 @@ export default function ChatDetailScreen({ route, navigation }) {
     setActiveConversation(conversationId);
     fetchMessages();
     api.get("/conversations/" + conversationId).then((res) => {
-      const members = res.data?.members || [];
-      const other = members.find((m) => m.id !== user?.id);
-      if (other) {
-        setReceiverId(other.id);
-        setOtherUser(other);
-        // Check block status after we have receiverId
-        api.get("/users/" + other.id + "/block-status").then((res2) => {
-          const data = res2.data;
-          if (data.isBlocked) {
-            setBlockStatus(data.blockedBy === 'me' ? 'blocked_by_me' : 'blocked_by_them');
-          } else {
-            setBlockStatus(null);
-          }
-        }).catch(() => {});
+      const convData = res.data;
+      const members = convData?.members || [];
+      const isGroupConv = convData?.type === "group" || isGroup;
+      if (!isGroupConv) {
+        const other = members.find((m) => m.id !== user?.id);
+        if (other) {
+          setReceiverId(other.id);
+          setOtherUser(other);
+          api.get("/users/" + other.id + "/block-status").then((res2) => {
+            const data = res2.data;
+            if (data.isBlocked) {
+              setBlockStatus(data.blockedBy === 'me' ? 'blocked_by_me' : 'blocked_by_them');
+            } else {
+              setBlockStatus(null);
+            }
+          }).catch(() => {});
+        }
+      } else {
+        // Group: set otherUser to null, member count shown instead
+        setOtherUser(null);
+        setReceiverId(null);
+        setBlockStatus(null);
       }
     }).catch(() => {});
 
@@ -359,8 +368,8 @@ export default function ChatDetailScreen({ route, navigation }) {
     return formatDistanceToNow(new Date(d), { addSuffix: true, locale: vi });
   }
 
-  const initial = (otherUser?.name || name || "?")[0].toUpperCase();
-  const statusText = typing ? "Đang nhập..." : isBlocked ? "Đã chặn" : isOnline ? "Đang hoạt động" : "Không hoạt động";
+  const initial = isGroup ? "#" : (otherUser?.name || name || "?")[0].toUpperCase();
+  const statusText = isGroup ? "" : (typing ? "Đang nhập..." : isBlocked ? "Đã chặn" : isOnline ? "Đang hoạt động" : "Không hoạt động");
 
   const renderMessage = ({ item }) => {
     const isMine = item.sender_id === user?.id;
@@ -459,7 +468,11 @@ export default function ChatDetailScreen({ route, navigation }) {
           <Ionicons name="chevron-back" size={26} color={colors.primary} />
         </TouchableOpacity>
         <View style={styles.headerAvatar}>
-          {otherUser?.avatar ? (
+          {isGroup ? (
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="people" size={20} color={colors.primary} />
+            </View>
+          ) : otherUser?.avatar ? (
             <Image source={{ uri: otherUser.avatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
           ) : (
             <Text style={styles.headerAvatarText}>{initial}</Text>
@@ -467,8 +480,10 @@ export default function ChatDetailScreen({ route, navigation }) {
           {isOnline && <View style={styles.headerOnline} />}
         </View>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerName} numberOfLines={1}>{otherUser?.name || name || "Đoạn chat"}</Text>
-          <Text style={[styles.headerStatus, isOnline && { color: colors.online }]}>{statusText}</Text>
+          <Text style={styles.headerName} numberOfLines={1}>{isGroup ? (name || "Nhóm") : (otherUser?.name || name || "Đoạn chat")}</Text>
+          {isGroup ? (
+            <Text style={[styles.headerStatus, { color: "#6B7280" }]}>Nhóm chat</Text>
+          ) : (<Text style={[styles.headerStatus, isOnline && { color: colors.online }]}>{statusText}</Text>)}
         </View>
         <TouchableOpacity onPress={() => {
           Alert.alert("Tuỳ chọn", "", [

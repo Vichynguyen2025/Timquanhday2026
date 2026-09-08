@@ -142,7 +142,7 @@ export default function ChatListScreen({ navigation }) {
       });
       if (res.data?.id) {
         setShowCreateGroup(false);
-        navigation.navigate("ChatDetail", { conversationId: res.data.id, name: groupName.trim() });
+        navigation.navigate("ChatDetail", { conversationId: res.data.id, name: groupName.trim(), type: "group" });
         fetchConversations();
       }
     } catch (e) { Alert.alert("Lỗi", "Không thể tạo nhóm"); }
@@ -178,7 +178,7 @@ export default function ChatListScreen({ navigation }) {
     <TouchableOpacity
       style={styles.convItem}
       activeOpacity={0.7}
-      onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.display_name })}
+      onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.display_name, type: item.type })}
       onLongPress={() => {
         Alert.alert("Tuỳ chọn", "", [
           { text: "Xóa cuộc trò chuyện", style: "destructive", onPress: () => {
@@ -234,7 +234,7 @@ export default function ChatListScreen({ navigation }) {
     <TouchableOpacity
       style={styles.onvItem}
       activeOpacity={0.7}
-      onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.name || "Nhóm" })}
+      onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.name || "Nhóm", type: "group" })}
     >
       <View style={styles.avatarWrap}>
         <View style={[styles.avatar, { backgroundColor: "#F0FDF4" }]}>
@@ -412,18 +412,19 @@ export default function ChatListScreen({ navigation }) {
                 <>
                   <Text style={sModal.sectionTitle}><Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn</Text>
                   {loadingNearby ? <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} /> : (
-                    <FlatList data={suggestedNearby} keyExtractor={(item) => `nearby-${item.id}`} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
+                    <FlatList data={suggestedNearby} keyExtractor={(item) => `nearby-${item.id}`} showsVerticalScrollIndicator={false} style={{ maxHeight: 190 }}
                       renderItem={({ item }) => (
-                        <TouchableOpacity style={sModal.suggestedCard} onPress={() => toggleMember(item)} activeOpacity={0.7}>
-                          <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                            {item.avatar ? <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 48, height: 48, borderRadius: 24 }} />
-                              : <Text style={{ fontSize: 18, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
-                            {item.is_online ? <View style={sModal.suggestedOnline} /> : null}
+                        <TouchableOpacity style={sModal.suggestedUserItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
+                          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                            {item.avatar ? <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                              : <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
                           </View>
-                          <Text style={sModal.suggestedName} numberOfLines={1}>{item.name}</Text>
-                          <Text style={sModal.suggestedDist}>{item.distance ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : ""}</Text>
-                          <View style={[sModal.addBtn, groupMembers.find(m => m.id === item.id) && sModal.addBtnActive]}>
-                            <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={18} color="#fff" />
+                          <View style={{ flex: 1, marginLeft: 10 }}>
+                            <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
+                            <Text style={{ fontSize: 11, color: "#22C55E" }}>{item.distance ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : ""}</Text>
+                          </View>
+                          <View style={[sModal.addBtnSm, groupMembers.find(m => m.id === item.id) && sModal.addBtnActive]}>
+                            <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={16} color="#fff" />
                           </View>
                         </TouchableOpacity>
                       )}
@@ -493,6 +494,9 @@ const sModal = StyleSheet.create({
   suggestedDist: { fontSize: 10, color: "#22C55E", marginTop: 2 },
   addBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#D1D5DB", alignItems: "center", justifyContent: "center", marginTop: 6 },
   addBtnActive: { backgroundColor: colors.primary },
+  // Suggested user item (vertical list)
+  suggestedUserItem: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  addBtnSm: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
   // User list
   userList: { flex: 1 },
   userItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
