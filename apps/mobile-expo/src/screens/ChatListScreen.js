@@ -265,36 +265,6 @@ export default function ChatListScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  // ════════════════════════════════════════
-                return (
-                  <TouchableOpacity style={sModal.userItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
-                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                      {item.avatar ? (
-                        <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }}
-                          style={{ width: 40, height: 40, borderRadius: 20 }} />
-                      ) : (
-                        <Text style={{ fontSize: 16, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>
-                      )}
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
-                      {nearbySuggestion?.distance != null && (
-                        <Text style={{ fontSize: 11, color: "#22C55E" }}>
-                          🧭 {nearbySuggestion.distance < 1000 ? `${nearbySuggestion.distance}m` : `${(nearbySuggestion.distance / 1000).toFixed(1)}km`}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={[sModal.checkBtn, selected && sModal.checkBtnActive]}>
-                      {selected && <Ionicons name="checkmark" size={16} color="#fff" />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
   );
 
   return (
