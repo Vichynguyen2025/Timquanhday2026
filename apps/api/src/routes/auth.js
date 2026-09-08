@@ -3,8 +3,8 @@ import bcrypt from 'bcryptjs';
 import { query, queryOne } from '../models/db.js';
 import { authenticate, generateTokens } from '../middleware/auth.js';
 import jwt from 'jsonwebtoken';
-
 import crypto from 'crypto';
+import { sendOTPEmail } from '../utils/mailer.js';
 
 const router = Router();
 
@@ -93,6 +93,81 @@ router.post('/logout', authenticate, async (req, res) => {
     await query('DELETE FROM user_sessions WHERE user_id = ?', [req.user.id]);
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Forgot Password — send OTP ─────────────
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required' });
+
+    const user = await queryOne('SELECT id, email FROM users WHERE email = ?', [email]);
+    if (!user) return res.json({ ok: true }); // Don't reveal if email exists
+
+    // Generate 6-digit OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
+    // Mark old codes as used
+    await query('UPDATE password_otps SET used = 1 WHERE email = ?', [email]);
+    await query('INSERT INTO password_otps (email, code, expires_at) VALUES (?, ?, ?)', [email, code, expiresAt]);
+
+    const sent = await sendOTPEmail(email, code);
+    if (!sent) return res.status(500).json({ error: 'Không thể gửi email. Vui lòng thử lại sau.' });
+
+    res.json({ ok: true, message: 'Mã xác nhận đã được gửi đến email của bạn' });
+  } catch (err) {
+    console.error('[Auth] Forgot password error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Verify OTP ────────────────────────────
+router.post('/verify-otp', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ error: 'Email and code required' });
+
+    const otp = await queryOne(
+      'SELECT * FROM password_otps WHERE email = ? AND code = ? AND used = 0 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
+      [email, code]
+    );
+
+    if (!otp) return res.status(400).json({ error: 'Mã xác nhận không hợp lệ hoặc đã hết hạn' });
+
+    res.json({ ok: true, valid: true });
+  } catch (err) {
+    console.error('[Auth] Verify OTP error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Reset Password ─────────────────────────
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, code, password } = req.body;
+    if (!email || !code || !password) return res.status(400).json({ error: 'Email, code and password required' });
+    if (password.length < 6) return res.status(400).json({ error: 'Mật khẩu tối thiểu 6 ký tự' });
+
+    const otp = await queryOne(
+      'SELECT * FROM password_otps WHERE email = ? AND code = ? AND used = 0 AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1',
+      [email, code]
+    );
+
+    if (!otp) return res.status(400).json({ error: 'Mã xác nhận không hợp lệ hoặc đã hết hạn' });
+
+    // Update password
+    const hashed = await bcrypt.hash(password, 10);
+    await query('UPDATE users SET password = ? WHERE email = ?', [hashed, email]);
+
+    // Mark code as used
+    await query('UPDATE password_otps SET used = 1 WHERE id = ?', [otp.id]);
+
+    res.json({ ok: true, message: 'Mật khẩu đã được đặt lại thành công' });
+  } catch (err) {
+    console.error('[Auth] Reset password error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
