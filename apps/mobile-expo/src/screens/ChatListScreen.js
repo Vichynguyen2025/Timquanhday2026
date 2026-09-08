@@ -63,7 +63,36 @@ export default function ChatListScreen({ navigation }) {
       });
     };
     socket.on("message:new", handler);
-    return () => socket.off("message:new", handler);
+
+    // Realtime online/offline — update participants last_seen
+    const onOnline = ({ userId }) => {
+      setConversations((prev) => prev.map((c) => {
+        if (c.type === "group") return c;
+        const otherId = c.participants?.[0]?.id;
+        if (otherId === userId) {
+          return { ...c, is_online: true, participants: c.participants.map((p) => p.id === userId ? { ...p, is_online: 1, last_seen: new Date().toISOString() } : p) };
+        }
+        return c;
+      }));
+    };
+    const onOffline = ({ userId, last_seen }) => {
+      setConversations((prev) => prev.map((c) => {
+        if (c.type === "group") return c;
+        const otherId = c.participants?.[0]?.id;
+        if (otherId === userId) {
+          return { ...c, is_online: false, participants: c.participants.map((p) => p.id === userId ? { ...p, is_online: 0, last_seen: last_seen || new Date().toISOString() } : p) };
+        }
+        return c;
+      }));
+    };
+    socket.on("user:online", onOnline);
+    socket.on("user:offline", onOffline);
+
+    return () => {
+      socket.off("message:new", handler);
+      socket.off("user:online", onOnline);
+      socket.off("user:offline", onOffline);
+    };
   }, [currentUserId]));
 
   async function fetchUnreadCount() {
@@ -97,6 +126,18 @@ export default function ChatListScreen({ navigation }) {
     if (!d) return "";
     const diff = Date.now() - new Date(d).getTime();
     if (diff < 60000) return "Vừa xong";
+    return formatDistanceToNow(new Date(d), { addSuffix: true, locale: vi });
+  }
+
+  function formatLastSeen(d) {
+    if (!d) return "";
+    const diff = Date.now() - new Date(d).getTime();
+    if (diff < 60000) return "Vừa xong";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} phút trước`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} giờ trước`;
+    const days = Math.floor(diff / 86400000);
+    if (days === 1) return "Hôm qua";
+    if (days < 7) return `${days} ngày trước`;
     return formatDistanceToNow(new Date(d), { addSuffix: true, locale: vi });
   }
 
@@ -218,7 +259,12 @@ export default function ChatListScreen({ navigation }) {
           <Text style={styles.convTime}>{item.last_message_at ? formatTime(item.last_message_at) : ""}</Text>
         </View>
         <View style={styles.convBottom}>
-          <Text style={styles.convLast} numberOfLines={1}>{item.last_message || "Bắt đầu trò chuyện"}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.convLast} numberOfLines={1}>{item.last_message || "Bắt đầu trò chuyện"}</Text>
+            {item.type !== "group" && !(onlineUsers.has(item.participants?.[0]?.id) || item.is_online) && item.participants?.[0]?.last_seen && (
+              <Text style={styles.lastSeenText}>Hoạt động {formatLastSeen(item.participants[0].last_seen)}</Text>
+            )}
+          </View>
           {item.unread_count > 0 && (
             <View style={styles.unread}>
               <Text style={styles.unreadText}>{item.unread_count > 99 ? "99+" : item.unread_count}</Text>
@@ -552,6 +598,7 @@ const styles = StyleSheet.create({
   convTime: { fontSize:12,color:"#65676B",marginLeft:8 },
   convBottom:{ flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginTop:3 },
   convLast:{ fontSize:14,color:"#65676B",flex:1 },
+  lastSeenText: { fontSize: 11, color: "#9CA3AF", marginTop: 2 },
   unread:{
     backgroundColor: colors.primary, borderRadius:10, minWidth:20, height:20,
     alignItems:"center", justifyContent:"center", paddingHorizontal:6, marginLeft:8,

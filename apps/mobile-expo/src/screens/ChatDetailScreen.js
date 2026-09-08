@@ -48,6 +48,18 @@ export default function ChatDetailScreen({ route, navigation }) {
   const isOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : (otherUser?.is_online === 1);
   const isBlocked = blockStatus === 'blocked_by_me' || blockStatus === 'blocked_by_them';
 
+  function formatLastSeen(d) {
+    if (!d) return "";
+    const diff = Date.now() - new Date(d).getTime();
+    if (diff < 60000) return "Vừa xong";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} phút trước`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} giờ trước`;
+    const days = Math.floor(diff / 86400000);
+    if (days === 1) return "Hôm qua";
+    if (days < 7) return `${days} ngày trước`;
+    return formatDistanceToNow(new Date(d), { addSuffix: true, locale: vi });
+  }
+
   // Resolve image URL: handle relative paths from old messages
   function resolveUrl(url) {
     if (!url) return null;
@@ -104,6 +116,7 @@ export default function ChatDetailScreen({ route, navigation }) {
             if (prev.find((m) => m.id === msg.id || m.client_temp_id === msg.client_temp_id)) return prev;
             return [...prev, msg];
           });
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
         }
       };
       const onDel = ({ messageId, conversationId: cId }) => {
@@ -136,6 +149,7 @@ export default function ChatDetailScreen({ route, navigation }) {
       setMessages(res.data);
     } catch (e) {}
     setLoading(false);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
   }
 
   function sendMessage() {
@@ -152,6 +166,7 @@ export default function ChatDetailScreen({ route, navigation }) {
     setText("");
     setReplyTo(null);
     setShowEmoji(false);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
     const socket = getSocket();
     if (socket) {
       socket.emit("message:send", {
@@ -369,7 +384,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   }
 
   const initial = isGroup ? "#" : (otherUser?.name || name || "?")[0].toUpperCase();
-  const statusText = isGroup ? "" : (typing ? "Đang nhập..." : isBlocked ? "Đã chặn" : isOnline ? "Đang hoạt động" : "Không hoạt động");
+  const statusText = isGroup ? "" : (typing ? "Đang nhập..." : isBlocked ? "Đã chặn" : isOnline ? "Đang hoạt động" : otherUser?.last_seen ? `Hoạt động ${formatLastSeen(otherUser.last_seen)}` : "Không hoạt động");
 
   const renderMessage = ({ item }) => {
     const isMine = item.sender_id === user?.id;
@@ -526,8 +541,8 @@ export default function ChatDetailScreen({ route, navigation }) {
           keyExtractor={(item) => item.id}
           style={styles.list}
           contentContainerStyle={{ paddingVertical: 8, paddingHorizontal: 12, paddingBottom: 8 }}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
           keyboardShouldPersistTaps="handled"
           renderItem={renderMessage}
         />
