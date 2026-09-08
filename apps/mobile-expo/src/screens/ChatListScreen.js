@@ -88,10 +88,25 @@ export default function ChatListScreen({ navigation }) {
     socket.on("user:online", onOnline);
     socket.on("user:offline", onOffline);
 
+    // Realtime new conversation (group created while on this screen)
+    const onNewConv = ({ id }) => {
+      // Fetch the single conversation and prepend it
+      api.get("/conversations/" + id).then((res) => {
+        if (res.data) {
+          setConversations((prev) => {
+            if (prev.find((c) => c.id === id)) return prev; // already exists
+            return [{ ...res.data, participants: res.data.members?.filter(m => m.id !== currentUserId) || [] }, ...prev];
+          });
+        }
+      }).catch(() => {});
+    };
+    socket.on("conversation:new", onNewConv);
+
     return () => {
       socket.off("message:new", handler);
       socket.off("user:online", onOnline);
       socket.off("user:offline", onOffline);
+      socket.off("conversation:new", onNewConv);
     };
   }, [currentUserId]));
 
