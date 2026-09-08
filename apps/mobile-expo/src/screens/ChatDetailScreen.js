@@ -484,89 +484,117 @@ export default function ChatDetailScreen({ route, navigation }) {
   const statusText = isGroup ? "" : (typing ? "Đang nhập..." : isBlocked ? "Đã chặn" : isOnline ? "Đang hoạt động" : otherUser?.last_seen ? `Hoạt động ${formatLastSeen(otherUser.last_seen)}` : "Không hoạt động");
 
   const renderMessage = ({ item }) => {
-    const isMine = item.sender_id === user?.id;
-    const isImage = item.type === "image";
-    const isFile = item.type === "file";
-    const attUrl = resolveUrl(item.metadata?.attachmentUrl || item.attachmentUrl);
-    const reactions = item.reactions || [];
-    const isFailed = item.status === "failed";
-    const isSending = item.status === "sending" || item.id?.startsWith("temp_");
-    const isUploading = item.status === "uploading";
+      const isMine = item.sender_id === user?.id;
+      const isImage = item.type === "image";
+      const isFile = item.type === "file";
+      const attUrl = resolveUrl(item.metadata?.attachmentUrl || item.attachmentUrl);
+      const reactions = item.reactions || [];
+      const isFailed = item.status === "failed";
+      const isSending = item.status === "sending" || item.id?.startsWith("temp_");
+      const isUploading = item.status === "uploading";
 
-    return (
-      <View style={[styles.msgWrap, isMine ? { alignItems: "flex-end" } : { alignItems: "flex-start" }]}>
-        {item.reply_preview && !item.reply_preview.is_deleted && (
-          <View style={[styles.replyPreview, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
-            <View style={[styles.replyBar, isMine ? { backgroundColor: "#fff" } : { backgroundColor: colors.primary }]} />
-            <View style={styles.replyContent}>
-              <Text style={[styles.replyLabel, isMine ? { color: "#fff" } : { color: colors.primary }]}>Trả lời</Text>
-              <Text style={[styles.replyText, isMine ? { color: "rgba(255,255,255,0.7)" } : { color: "#65676B" }]} numberOfLines={1}>{item.reply_preview.content}</Text>
+      function openImageViewer() {
+        // Collect ALL image messages in this conversation for swiping
+        const msgs = messages.filter(m => m.type === "image" && m.metadata?.attachmentUrl);
+        const idx = msgs.findIndex(m => m.id === item.id);
+        setViewerImages(msgs.map(m => resolveUrl(m.metadata?.attachmentUrl)).filter(Boolean));
+        setViewerIndex(Math.max(0, idx));
+        setShowImageViewer(true);
+      }
+
+      return (
+        <View style={[styles.msgWrap, isMine ? { alignItems: "flex-end" } : { alignItems: "flex-start" }]}>
+          {item.reply_preview && !item.reply_preview.is_deleted && (
+            <View style={[styles.replyPreview, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
+              <View style={[styles.replyBar, isMine ? { backgroundColor: "#fff" } : { backgroundColor: colors.primary }]} />
+              <View style={styles.replyContent}>
+                <Text style={[styles.replyLabel, isMine ? { color: "#fff" } : { color: colors.primary }]}>Trả lời</Text>
+                <Text style={[styles.replyText, isMine ? { color: "rgba(255,255,255,0.7)" } : { color: "#65676B" }]} numberOfLines={1}>{item.reply_preview.content}</Text>
+              </View>
+            </View>
+          )}
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
+            {!isMine && !isImage && <View style={styles.msgAvatar}>{otherUser?.avatar ? <Image source={{ uri: otherUser.avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} /> : <Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text>}</View>}
+            <View style={{ maxWidth: isImage ? "80%" : "82%" }}>
+              {item.is_deleted ? (
+                <Text style={[styles.deletedText, isMine && { textAlign: "right" }]}>{item.content}</Text>
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={isImage ? 0.9 : 0.8}
+                  onPress={isImage ? openImageViewer : undefined}
+                  onLongPress={() => handleLongPress(item)}
+                  delayLongPress={400}
+                  style={[
+                    styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther,
+                    isImage ? { backgroundColor: "transparent", padding: 0, elevation: 0 } : {},
+                    (isSending || isUploading) ? { opacity: 0.65 } : {},
+                    isFailed ? { borderWidth: 1, borderColor: "#EF4444" } : {},
+                  ]}
+                >
+                  {item.reply_preview && !item.reply_preview.is_deleted && (
+                    <View style={[styles.inlineReply, isMine ? { borderLeftColor: "rgba(255,255,255,0.5)" } : { borderLeftColor: colors.primary }]}>
+                      <Text style={[styles.inlineReplyText, isMine ? { color: "rgba(255,255,255,0.7)" } : { color: "#65676B" }]} numberOfLines={1}>{item.reply_preview.content}</Text>
+                    </View>
+                  )}
+                  {isImage && attUrl ? (
+                    <View style={styles.albumWrap}>
+                      <Image source={{ uri: attUrl }} style={styles.albumImage}
+                        onError={(e) => console.log("Image error:", attUrl, e.nativeEvent?.error)}
+                      />
+                      {/* Photo count badge if this is the first of multiple images */}
+                      {(() => {
+                        const allImgs = messages.filter(m => m.type === "image" && m.metadata?.attachmentUrl);
+                        const pos = allImgs.findIndex(m => m.id === item.id);
+                        const total = allImgs.length;
+                        if (total > 1 && pos === 0) {
+                          return (
+                            <View style={styles.albumCountBadge}>
+                              <Ionicons name="images" size={14} color="#fff" />
+                              <Text style={styles.albumCountText}>{total} ảnh</Text>
+                            </View>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </View>
+                  ) : isImage && !attUrl ? (
+                    <View style={[styles.image, { backgroundColor: "#F0F2F5", justifyContent: "center", alignItems: "center" }]}>
+                      <Ionicons name="image-outline" size={32} color="#ccc" />
+                    </View>
+                  ) : isFile ? (
+                    <View style={styles.fileRow}>
+                      <Ionicons name="document-outline" size={22} color={isMine ? "#fff" : colors.primary} />
+                      <Text style={[styles.fileText, isMine && { color: "#fff" }]} numberOfLines={1}>{item.content || "File"}</Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.msgText, isMine && { color: "#fff" }]}>{item.content}</Text>
+                  )}
+                  {/* Timestamp + status (only for single images; not shown inside album) */}
+                  <View style={[styles.timeRow, isMine ? { justifyContent: "flex-end" } : { justifyContent: "flex-start" }]}>
+                    <Text style={[styles.time, isMine ? { color: "rgba(255,255,255,0.6)" } : { color: "#65676B" }]}>{formatTime(item.created_at)}</Text>
+                    {isMine && !item.is_deleted && (
+                      <Text style={[styles.status, isMine && { color: "rgba(255,255,255,0.6)" }]}>
+                        {isFailed ? "⚠" : isUploading ? "↑" : isSending ? "" : "✓✓"}
+                      </Text>
+                    )}
+                  </View>
+                  {reactions.length > 0 && (
+                    <View style={[styles.reactions, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
+                      {reactions.map((r, i) => <Text key={i} style={{ fontSize: 14 }}>{r.emoji}</Text>)}
+                    </View>
+                  )}
+                  {isFailed && (
+                    <TouchableOpacity onPress={() => { setMessages((prev) => prev.filter((m) => m.id !== item.id)); setText(item.content); }}>
+                      <Text style={styles.retry}>Thử lại</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
           </View>
-        )}
-        <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
-          {!isMine && !isImage && <View style={styles.msgAvatar}>{otherUser?.avatar ? <Image source={{ uri: otherUser.avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} /> : <Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text>}</View>}
-          <View style={{ maxWidth: "82%" }}>
-            {item.is_deleted ? (
-              <Text style={[styles.deletedText, isMine && { textAlign: "right" }]}>{item.content}</Text>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onLongPress={() => handleLongPress(item)}
-                delayLongPress={400}
-                style={[
-                  styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther,
-                  isImage ? { backgroundColor: "transparent", padding: 0, elevation: 0 } : {},
-                  (isSending || isUploading) ? { opacity: 0.65 } : {},
-                  isFailed ? { borderWidth: 1, borderColor: "#EF4444" } : {},
-                ]}
-              >
-                {item.reply_preview && !item.reply_preview.is_deleted && (
-                  <View style={[styles.inlineReply, isMine ? { borderLeftColor: "rgba(255,255,255,0.5)" } : { borderLeftColor: colors.primary }]}>
-                    <Text style={[styles.inlineReplyText, isMine ? { color: "rgba(255,255,255,0.7)" } : { color: "#65676B" }]} numberOfLines={1}>{item.reply_preview.content}</Text>
-                  </View>
-                )}
-                {isImage && attUrl ? (
-                  <Image source={{ uri: attUrl }} style={styles.image}
-                    onError={(e) => console.log("Image error:", attUrl, e.nativeEvent?.error)}
-                  />
-                ) : isImage && !attUrl ? (
-                  <View style={[styles.image, { backgroundColor: "#F0F2F5", justifyContent: "center", alignItems: "center" }]}>
-                    <Ionicons name="image-outline" size={32} color="#ccc" />
-                  </View>
-                ) : isFile ? (
-                  <View style={styles.fileRow}>
-                    <Ionicons name="document-outline" size={22} color={isMine ? "#fff" : colors.primary} />
-                    <Text style={[styles.fileText, isMine && { color: "#fff" }]} numberOfLines={1}>{item.content || "File"}</Text>
-                  </View>
-                ) : (
-                  <Text style={[styles.msgText, isMine && { color: "#fff" }]}>{item.content}</Text>
-                )}
-                <View style={[styles.timeRow, isMine ? { justifyContent: "flex-end" } : { justifyContent: "flex-start" }]}>
-                  <Text style={[styles.time, isMine && { color: "rgba(255,255,255,0.6)" }]}>{formatTime(item.created_at)}</Text>
-                  {isMine && !item.is_deleted && (
-                    <Text style={[styles.status, isMine && { color: "rgba(255,255,255,0.6)" }]}>
-                      {isFailed ? "⚠" : isUploading ? "↑" : isSending ? "" : "✓✓"}
-                    </Text>
-                  )}
-                </View>
-                {reactions.length > 0 && (
-                  <View style={[styles.reactions, isMine ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" }]}>
-                    {reactions.map((r, i) => <Text key={i} style={{ fontSize: 14 }}>{r.emoji}</Text>)}
-                  </View>
-                )}
-                {isFailed && (
-                  <TouchableOpacity onPress={() => { setMessages((prev) => prev.filter((m) => m.id !== item.id)); setText(item.content); }}>
-                    <Text style={styles.retry}>Thử lại</Text>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
         </View>
-      </View>
-    );
-  };
+      );
+    };
 
   return (
     <KeyboardAvoidingView
@@ -1058,6 +1086,16 @@ const styles = StyleSheet.create({
   inlineReply: { borderLeftWidth: 2, borderLeftColor: colors.primary, paddingLeft: 8, marginBottom: 4 },
   inlineReplyText: { fontSize: 12, color: "#65676B" },
   image: { width: 220, height: 220, borderRadius: 14, backgroundColor: "#F0F2F5" },
+  // Album styles
+  albumWrap: { position: "relative" },
+  albumImage: { width: 240, height: 220, borderRadius: 14, backgroundColor: "#F0F2F5" },
+  albumCountBadge: {
+    position: "absolute", bottom: 10, right: 10,
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(0,0,0,0.6)", paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 20,
+  },
+  albumCountText: { fontSize: 12, fontWeight: "600", color: "#fff" },
   fileRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   fileText: { fontSize: 14, color: "#000", flex: 1 },
   timeRow: { flexDirection: "row", alignItems: "center", marginTop: 3, gap: 3 },
