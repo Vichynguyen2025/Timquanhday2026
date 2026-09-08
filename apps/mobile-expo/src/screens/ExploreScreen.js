@@ -280,7 +280,7 @@ export default function ExploreScreen() {
         <View style={styles.userInfo}>
           <View style={styles.userNameRow}>
             <Text style={styles.userName}>{item.name}</Text>
-            {item.is_online && <View style={styles.onlineBadge}><Text style={styles.onlineBadgeText}>● Online</Text></View>}
+            {item.is_online ? <View style={styles.onlineBadge}><Text style={styles.onlineBadgeText}>● Online</Text></View> : null}
           </View>
           <View style={styles.userMetaRow}>
             <Ionicons name="navigate" size={12} color="#9CA3AF" />
