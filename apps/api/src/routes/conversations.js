@@ -21,19 +21,22 @@ router.get('/', authenticate, async (req, res) => {
     // Get participant info for each conversation
     for (const conv of conversations) {
       const members = await query(`
-        SELECT u.id, u.name, u.avatar, u.is_online, u.last_seen
+        SELECT u.id, u.name, u.avatar, u.is_online, u.last_seen,
+          (SELECT nickname FROM conversation_nicknames WHERE conversation_id = ? AND user_id = u.id) as nickname
         FROM conversation_members cm
         JOIN users u ON cm.user_id = u.id
         WHERE cm.conversation_id = ? AND u.id != ?
-      `, [conv.id, req.user.id]);
+      `, [conv.id, conv.id, req.user.id]);
       conv.participants = members;
 
-      // For private chats, use the other person's name
+      // For private chats, use the other person's name or nickname
       if (conv.type === 'private' && members.length > 0) {
-        conv.display_name = members[0].name;
+        // Check if WE set a nickname for them
+        const myNick = await queryOne('SELECT nickname FROM conversation_nicknames WHERE conversation_id = ? AND user_id = ?', [conv.id, req.user.id]);
+        conv.display_name = myNick?.nickname || members[0].nickname || members[0].name;
         conv.avatar = members[0].avatar || null;
         conv.is_online = members[0].is_online === 1;
-      } else {
+      } else if (conv.type === 'group') {
         conv.display_name = conv.name || 'Group';
         conv.is_online = false;
       }
@@ -192,6 +195,79 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
     console.error('[NearbyGroups] Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// ─── Update conversation (name, avatar) ────────
+router.patch('/:id', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, avatar } = req.body;
+    if (!name && !avatar) return res.status(400).json({ error: 'Nothing to update' });
+
+    // Check membership
+    const member = await queryOne('SELECT * FROM conversation_members WHERE conversation_id = ? AND user_id = ?', [id, req.user.id]);
+    if (!member) return res.status(403).json({ error: 'Not a member' });
+
+    const updates = [];
+    const values = [];
+    if (name !== undefined) { updates.push('name = ?'); values.push(name); }
+    if (avatar !== undefined) { updates.push('avatar = ?'); values.push(avatar); }
+    values.push(id);
+    await query(`UPDATE conversations SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    // Broadcast update to conversation room
+    if (req.app?.get('io')) {
+      const io = req.app.get('io');
+      io.to(`conversation:${id}`).emit('conversation:updated', { conversationId: id, name, avatar });
+    }
+
+    res.json({ success: true, conversationId: id, name, avatar });
+  } catch (err) {
+    console.error('[Conv] Update error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Get nickname ─────────────────────────────
+router.get('/:id/nickname', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const nick = await queryOne('SELECT nickname FROM conversation_nicknames WHERE conversation_id = ? AND user_id = ?', [id, req.user.id]);
+    res.json({ nickname: nick?.nickname || null });
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ─── Set nickname ─────────────────────────────
+router.put('/:id/nickname', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nickname } = req.body;
+    if (!nickname || !nickname.trim()) {
+      // Remove nickname
+      await query('DELETE FROM conversation_nicknames WHERE conversation_id = ? AND user_id = ?', [id, req.user.id]);
+      return res.json({ nickname: null });
+    }
+    await query(
+      'INSERT INTO conversation_nicknames (conversation_id, user_id, nickname) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE nickname = ?',
+      [id, req.user.id, nickname.trim(), nickname.trim()]
+    );
+    res.json({ nickname: nickname.trim() });
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
+});
+
+// ─── Member list ──────────────────────────────
+router.get('/:id/members', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const members = await query(`
+      SELECT u.id, u.name, u.avatar, u.is_online, u.last_seen, cm.joined_at
+      FROM conversation_members cm
+      JOIN users u ON cm.user_id = u.id
+      WHERE cm.conversation_id = ? AND cm.deleted_at IS NULL
+      ORDER BY cm.joined_at ASC
+    `, [id]);
+    res.json({ members });
+  } catch (err) { res.status(500).json({ error: 'Internal server error' }); }
 });
 
 // Delete conversation (for current user only)

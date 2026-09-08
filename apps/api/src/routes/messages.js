@@ -29,15 +29,17 @@ router.get('/:conversationId', authenticate, async (req, res) => {
 
     const messages = await query(`
       SELECT m.id, m.conversation_id, m.sender_id, m.content, m.type, m.metadata,
-             m.reply_to_id, m.is_deleted, m.edited_at, m.created_at,
+             m.reply_to_id, m.is_deleted, m.deleted_by, m.edited_at, m.created_at,
              u.name as sender_name, u.avatar as sender_avatar
       FROM messages m
       JOIN users u ON m.sender_id = u.id
+      LEFT JOIN message_deletions md ON md.message_id = m.id AND md.user_id = ?
       WHERE m.conversation_id = ?
+      AND md.id IS NULL
       ${before ? 'AND m.created_at < ?' : ''}
       ORDER BY m.created_at DESC
       LIMIT ?
-    `, before ? [conversationId, before, limitNum] : [conversationId, limitNum]);
+    `, before ? [req.user.id, conversationId, before, limitNum] : [req.user.id, conversationId, limitNum]);
 
     // Get reactions
     if (messages.length > 0) {
@@ -85,14 +87,40 @@ router.get('/:conversationId', authenticate, async (req, res) => {
   }
 });
 
-// Delete message
+// Delete message (both sides / my side)
 router.delete('/:id', authenticate, async (req, res) => {
   try {
-    const msg = await query('SELECT * FROM messages WHERE id = ? AND sender_id = ?', [req.params.id, req.user.id]);
-    if (!msg.length) return res.status(404).json({ error: 'Message not found or unauthorized' });
-    await query('UPDATE messages SET is_deleted = TRUE, content = "Tin nhắn đã được thu hồi" WHERE id = ?', [req.params.id]);
-    res.json({ success: true, messageId: req.params.id });
+    const { side } = req.query; // 'my' or 'both'
+    const msg = await query('SELECT * FROM messages WHERE id = ?', [req.params.id]);
+    if (!msg.length) return res.status(404).json({ error: 'Message not found' });
+
+    const isSender = msg[0].sender_id === req.user.id;
+
+    if (side === 'both' && isSender) {
+      // Both sides: mark is_deleted + deleted_at globally
+      await query('UPDATE messages SET is_deleted = TRUE, content = "Tin nhắn đã được thu hồi", deleted_at = NOW(), deleted_by = ? WHERE id = ?',
+        [req.user.id, req.params.id]);
+    } else {
+      // My side: insert into message_deletions for the current user
+      await query('INSERT IGNORE INTO message_deletions (message_id, user_id) VALUES (?, ?)',
+        [req.params.id, req.user.id]);
+    }
+
+    // Broadcast deletion event to conversation for realtime removal
+    const msgConv = await queryOne('SELECT conversation_id FROM messages WHERE id = ?', [req.params.id]);
+    if (msgConv && req.app?.get('io')) {
+      const io = req.app.get('io');
+      io.to(`conversation:${msgConv.conversation_id}`).emit('message:deleted', {
+        messageId: req.params.id,
+        conversationId: msgConv.conversation_id,
+        side: side || 'my',
+        userId: req.user.id,
+      });
+    }
+
+    res.json({ success: true, messageId: req.params.id, side: side || 'my' });
   } catch (err) {
+    console.error('[Messages] Delete error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

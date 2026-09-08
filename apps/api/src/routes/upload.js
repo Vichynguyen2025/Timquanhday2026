@@ -98,4 +98,43 @@ router.post('/image', authenticate, async (req, res) => {
   });
 });
 
+// ─── Multi-image upload ─────────────────────────
+router.post('/images', authenticate, async (req, res) => {
+  upload.array('images', 10)(req, res, async (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large. Max 20MB.' });
+      }
+      return res.status(400).json({ error: err.message || 'Upload failed' });
+    }
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No files uploaded' });
+    }
+
+    const results = [];
+    for (const file of req.files) {
+      const filePath = file.path;
+      try {
+        await sharp(filePath)
+          .resize(1920, 1920, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 85, mozjpeg: true })
+          .toFile(filePath + '_tmp.jpg');
+        fs.unlinkSync(filePath);
+        fs.renameSync(filePath + '_tmp.jpg', filePath);
+      } catch (e) {}
+      const protocol = req.protocol;
+      const host = req.get('host');
+      const baseUrl = `${protocol}://${host}`;
+      results.push({
+        url: `${baseUrl}/uploads/${file.filename}`,
+        filename: file.filename,
+        originalName: file.originalname,
+        size: fs.statSync(filePath).size,
+        mime: 'image/jpeg',
+      });
+    }
+    res.json({ images: results });
+  });
+});
+
 export default router;

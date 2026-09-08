@@ -239,7 +239,12 @@ export default function ChatListScreen({ navigation }) {
       <View style={styles.avatarWrap}>
         <View style={styles.avatar}>
           {item.type === "group" ? (
-            <Ionicons name="people" size={24} color={colors.primary} />
+            item.avatar ? (
+              <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }}
+                style={{ width: 52, height: 52, borderRadius: 26 }} />
+            ) : (
+              <Ionicons name="people" size={24} color={colors.primary} />
+            )
           ) : item.avatar ? (
             <Image source={{ uri: item.avatar }} style={{ width: 52, height: 52, borderRadius: 26 }} />
           ) : (

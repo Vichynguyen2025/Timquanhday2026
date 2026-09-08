@@ -41,6 +41,19 @@ export default function ChatDetailScreen({ route, navigation }) {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [docName, setDocName] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [multiImages, setMultiImages] = useState([]); // [{uri, name}]
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [convInfo, setConvInfo] = useState(null);
+  const [showNickname, setShowNickname] = useState(false);
+  const [nickname, setNickname] = useState("");
+  const [editNickname, setEditNickname] = useState("");
+  const [groupNameEdit, setGroupNameEdit] = useState("");
+  const [showGroupRename, setShowGroupRename] = useState(false);
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [viewerImages, setViewerImages] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [convMembers, setConvMembers] = useState([]);
+  const [deletedMessages, setDeletedMessages] = useState(new Set());
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -222,6 +235,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   function handleLongPress(msg) {
     if (msg.is_deleted || msg.id?.startsWith("temp_")) return;
     const isMine = msg.sender_id === user?.id;
+    const isImage = msg.type === "image";
     const options = [
       { text: "Trả lời", onPress: () => setReplyTo({ id: msg.id, content: msg.content, sender_id: msg.sender_id }) },
       { text: "Thả cảm xúc", onPress: () => {
@@ -233,31 +247,60 @@ export default function ChatDetailScreen({ route, navigation }) {
         })).concat([{ text: "Huỷ", style: "cancel" }]));
       }},
     ];
+    if (isImage) {
+      options.push({ text: "Xem ảnh", onPress: () => {
+        const msgs = messages.filter(m => m.type === "image" && m.metadata?.attachmentUrl);
+        const idx = msgs.findIndex(m => m.id === msg.id);
+        setViewerImages(msgs.map(m => resolveUrl(m.metadata?.attachmentUrl)).filter(Boolean));
+        setViewerIndex(Math.max(0, idx));
+        setShowImageViewer(true);
+      }});
+    }
     if (isMine) {
-      options.push({ text: "Thu hồi", style: "destructive", onPress: () => {
-        Alert.alert("Thu hồi tin nhắn", "Xác nhận thu hồi?", [
+      options.push({ text: "Xóa cả 2 bên", style: "destructive", onPress: () => {
+        Alert.alert("Xóa tin nhắn", "Tin nhắn sẽ bị xóa khỏi cả 2 phía?", [
           { text: "Huỷ", style: "cancel" },
-          { text: "Thu hồi", style: "destructive", onPress: () => {
-            const socket = getSocket(); if (socket) socket.emit("message:delete", { messageId: msg.id, conversationId });
+          { text: "Xóa", style: "destructive", onPress: async () => {
+            try {
+              await api.delete(`/messages/${msg.id}?side=both`);
+              setMessages((prev) => prev.filter(m => m.id !== msg.id));
+              const socket = getSocket(); if (socket) socket.emit("message:delete", { messageId: msg.id, conversationId });
+            } catch (e) {}
           }},
         ]);
       }});
     }
+    if (!isMine) {
+      options.push({ text: "Xóa phía tôi", style: "destructive", onPress: () => {
+        Alert.alert("Xóa tin nhắn", "Chỉ xóa khỏi phía bạn?", [
+          { text: "Huỷ", style: "cancel" },
+          { text: "Xóa", style: "destructive", onPress: async () => {
+            try {
+              await api.delete(`/messages/${msg.id}?side=my`);
+              setMessages((prev) => prev.filter(m => m.id !== msg.id));
+            } catch (e) {}
+          }},
+        ]);
+      }});
+    }
+    options.push({ text: "Huỷ", style: "cancel" });
     Alert.alert("Tin nhắn", "", options);
   }
 
-  // ── Image picker + preview ──
-  async function pickImage() {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.8 });
-    if (result.canceled) return;
-    const file = result.assets[0];
-    setSelectedImage(file);
-    setPreviewUrl(file.uri);
-    setSelectedDoc(null);
-    setDocName(null);
+  // ── Multi-image picker ──
+  async function pickImages() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsMultipleSelection: true,
+      selectionLimit: 10,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    setMultiImages(result.assets.map(f => ({ uri: f.uri, name: f.fileName || 'photo.jpg' })));
   }
 
   function cancelAttachment() {
+    setMultiImages([]);
     setSelectedImage(null);
     if (previewUrl) { URL.revokeObjectURL?.(previewUrl); }
     setPreviewUrl(null);
@@ -266,53 +309,62 @@ export default function ChatDetailScreen({ route, navigation }) {
     setUploadProgress(null);
   }
 
-  // ── Send image ──
-  async function sendImage() {
-    if (!selectedImage || !user?.id) return;
+  // ── Send multi-images ──
+  async function sendMultiImages() {
+    if (!multiImages.length || !user?.id) return;
     setUploading(true);
-    setUploadProgress("Đang tải lên...");
-    const tempId = "img_" + Date.now();
-    const optimisticMsg = {
-      id: tempId, conversation_id: conversationId, sender_id: user.id,
-      content: "", type: "image", metadata: { attachmentUrl: previewUrl },
-      created_at: new Date().toISOString(), status: "uploading", client_temp_id: tempId, sender_name: user.name,
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-    cancelAttachment();
-
-    const formData = new FormData();
-    formData.append("image", { uri: selectedImage.uri, type: "image/jpeg", name: "photo.jpg" });
+    setUploadProgress(`Đang tải ${multiImages.length} ảnh...`);
     const token = await AsyncStorage.getItem("accessToken");
+    const formData = new FormData();
+    for (const img of multiImages) {
+      formData.append("images", { uri: img.uri, type: "image/jpeg", name: img.name });
+    }
     try {
-      setUploadProgress("Đang tải ảnh...");
-      const res = await fetch("https://timquanhday.de/api/upload/image", {
+      const res = await fetch("https://timquanhday.de/api/upload/images", {
         method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
       });
       const data = await res.json();
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "sending", metadata: { ...m.metadata, attachmentUrl: data.url } } : m));
-      setUploadProgress("Đang gửi...");
+      if (!data?.images?.length) { setUploading(false); return; }
+      setUploadProgress(`Đang gửi ${data.images.length} ảnh...`);
       const socket = getSocket();
-      if (socket) {
-        socket.emit("message:send", {
-          conversationId, content: "", type: "image", receiverId, tempId,
-          attachmentUrl: data.url, attachmentName: data.filename,
-        }, (response) => {
-          if (response?.success) {
-            setMessages((prev) => {
-              const idx = prev.findIndex((m) => m.id === tempId || m.client_temp_id === tempId);
-              if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], id: response.messageId, status: "sent" }; return next; }
-              return prev;
-            });
-          } else {
-            setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
-          }
-        });
+      for (let i = 0; i < data.images.length; i++) {
+        const img = data.images[i];
+        const tempId = "img_" + Date.now() + "_" + i;
+        const optimisticMsg = {
+          id: tempId, conversation_id: conversationId, sender_id: user.id,
+          content: "", type: "image", metadata: { attachmentUrl: img.url },
+          created_at: new Date().toISOString(), status: "sending", client_temp_id: tempId, sender_name: user.name,
+        };
+        setMessages((prev) => [...prev, optimisticMsg]);
+        if (socket) {
+          socket.emit("message:send", {
+            conversationId, content: "", type: "image", receiverId, tempId,
+            attachmentUrl: img.url, attachmentName: img.filename,
+          }, (response) => {
+            if (response?.success) {
+              setMessages((prev) => {
+                const idx = prev.findIndex((m) => m.id === tempId || m.client_temp_id === tempId);
+                if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], id: response.messageId, status: "sent" }; return next; }
+                return prev;
+              });
+            }
+          });
+        }
+        await new Promise(r => setTimeout(r, 50)); // stagger sends
       }
-    } catch (e) {
-      setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
-    }
+    } catch (e) { Alert.alert("Lỗi", "Không thể gửi ảnh"); }
+    setMultiImages([]);
     setUploading(false);
     setUploadProgress(null);
+  }
+
+  // ── Single image (legacy) ──
+  async function sendImage() {
+    if (!selectedImage || !user?.id) return;
+    setMultiImages([{ uri: selectedImage.uri, name: selectedImage.fileName || 'photo.jpg' }]);
+    await sendMultiImages();
+    setSelectedImage(null);
+    setPreviewUrl(null);
   }
 
   // ── Pick file + send ──
@@ -500,32 +552,32 @@ export default function ChatDetailScreen({ route, navigation }) {
             <Text style={[styles.headerStatus, { color: "#6B7280" }]}>Nhóm chat</Text>
           ) : (<Text style={[styles.headerStatus, isOnline && { color: colors.online }]}>{statusText}</Text>)}
         </View>
-        <TouchableOpacity onPress={() => {
-          Alert.alert("Tuỳ chọn", "", [
-            { text: "Thông tin", onPress: () => setShowInfo(true) },
-            { text: "Xóa cuộc trò chuyện", style: "destructive", onPress: () => {
-              Alert.alert("Xóa cuộc trò chuyện", "Toàn bộ lịch sử sẽ bị xóa khỏi danh sách của bạn.", [
-                { text: "Huỷ", style: "cancel" },
-                { text: "Xóa", style: "destructive", onPress: async () => {
-                  try { await api.delete("/conversations/" + conversationId);
-                    navigation.goBack();
-                  } catch (e) {}
-                }},
+        <TouchableOpacity onPress={async () => {
+          if (isGroup) {
+            // Load group info
+            try {
+              const [convRes, memRes] = await Promise.all([
+                api.get("/conversations/" + conversationId),
+                api.get("/conversations/" + conversationId + "/members"),
               ]);
-            }},
-            { text: blockStatus === 'blocked_by_me' ? "Bỏ chặn" : "Chặn người dùng", style: "destructive", onPress: async () => {
-              try {
-                if (blockStatus === 'blocked_by_me') {
-                  await api.post("/users/" + receiverId + "/unblock");
-                  setBlockStatus(null);
-                } else {
-                  await api.post("/users/" + receiverId + "/block");
-                  setBlockStatus('blocked_by_me');
-                }
-              } catch (e) {}
-            }},
-            { text: "Huỷ", style: "cancel" },
-          ]);
+              setConvInfo(convRes.data);
+              setConvMembers(memRes.data?.members || []);
+              setGroupNameEdit(convRes.data?.name || "");
+              setShowInfoModal(true);
+            } catch (e) {}
+          } else {
+            // Load nickname + info
+            try {
+              const [convRes, nickRes] = await Promise.all([
+                api.get("/conversations/" + conversationId),
+                api.get("/conversations/" + conversationId + "/nickname"),
+              ]);
+              setConvInfo(convRes.data);
+              setNickname(nickRes.data?.nickname || "");
+              setEditNickname(nickRes.data?.nickname || "");
+              setShowInfoModal(true);
+            } catch (e) {}
+          }
         }} style={styles.headerBtn}>
           <Ionicons name="ellipsis-horizontal" size={24} color={colors.primary} />
         </TouchableOpacity>
@@ -549,14 +601,24 @@ export default function ChatDetailScreen({ route, navigation }) {
       )}
       {typing && <Text style={styles.typing}>Đang nhập...</Text>}
 
-      {/* Attachment Preview Bar */}
-      {(previewUrl || selectedDoc) && (
+      {/* Multi-image preview bar */}
+      {(previewUrl || selectedDoc || multiImages.length > 0) && (
         <View style={styles.previewBar}>
-          {previewUrl ? (
+          {multiImages.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingVertical: 4 }}>
+              {multiImages.map((img, i) => (
+                <Image key={i} source={{ uri: img.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} />
+              ))}
+              <TouchableOpacity onPress={() => setMultiImages([])} style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="close" size={20} color="#6B7280" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={sendMultiImages} style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name="send" size={20} color="#fff" />
+              </TouchableOpacity>
+            </ScrollView>
+          ) : previewUrl ? (
             <>
-              <Image source={{ uri: previewUrl }} style={styles.previewImage}
-                onError={(e) => console.log("Preview error:", e.nativeEvent?.error)}
-              />
+              <Image source={{ uri: previewUrl }} style={styles.previewImage} />
               <View style={styles.previewInfo}>
                 <Text style={styles.previewName} numberOfLines={1}>{selectedImage?.fileName || selectedImage?.name || "Ảnh"}</Text>
                 <Text style={styles.previewSize}>Sẵn sàng gửi</Text>
@@ -564,23 +626,23 @@ export default function ChatDetailScreen({ route, navigation }) {
             </>
           ) : selectedDoc ? (
             <>
-              <View style={styles.previewFileIcon}>
-                <Ionicons name="document-outline" size={24} color={colors.primary} />
-              </View>
+              <View style={styles.previewFileIcon}><Ionicons name="document-outline" size={24} color={colors.primary} /></View>
               <View style={styles.previewInfo}>
                 <Text style={styles.previewName} numberOfLines={1}>{docName}</Text>
                 <Text style={styles.previewSize}>File đính kèm</Text>
               </View>
             </>
           ) : null}
-          <View style={styles.previewActions}>
-            <TouchableOpacity onPress={previewUrl ? sendImage : pickFile} style={[styles.previewBtn, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.previewBtnText, { color: "#fff" }]}>Gửi</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={cancelAttachment} style={styles.previewBtn}>
-              <Ionicons name="close" size={18} color="#65676B" />
-            </TouchableOpacity>
-          </View>
+          {!(multiImages.length > 0) && (
+            <View style={styles.previewActions}>
+              <TouchableOpacity onPress={previewUrl ? sendImage : (selectedDoc ? (async () => { /* auto-send */ })() : null)} style={[styles.previewBtn, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.previewBtnText, { color: "#fff" }]}>Gửi</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={cancelAttachment} style={styles.previewBtn}>
+                <Ionicons name="close" size={18} color="#65676B" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
 
@@ -662,7 +724,7 @@ export default function ChatDetailScreen({ route, navigation }) {
               onFocus={() => setShowEmoji(false)}
               multiline
             />
-            <TouchableOpacity onPress={pickImage} style={styles.inputBtn}>
+            <TouchableOpacity onPress={pickImages} style={styles.inputBtn}>
               <Ionicons name="image-outline" size={22} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity onPress={pickFile} style={styles.inputBtn}>
@@ -686,29 +748,243 @@ export default function ChatDetailScreen({ route, navigation }) {
         </>
       )}
 
-      {/* User Info Modal with realtime presence */}
-      <Modal visible={showInfo} transparent animationType="slide">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowInfo(false)}>
+      {/* ─── Info / Nickname / Group Modal ──── */}
+      <Modal visible={showInfoModal} transparent animationType="slide" onRequestClose={() => setShowInfoModal(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowInfoModal(false)}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
-            <View style={styles.modalAvatarBig}>
-              <Text style={styles.modalAvatarText}>{initial}</Text>
-            </View>
-            <Text style={styles.modalName}>{otherUser?.name || "Người dùng"}</Text>
-            <View style={styles.modalStatus}>
-              <View style={[styles.statusDot, { backgroundColor: isOnline ? colors.online : "#ccc" }]} />
-              <Text style={styles.modalStatusText}>{isOnline ? "Đang hoạt động" : "Không hoạt động"}</Text>
-            </View>
-            {otherUser?.bio ? <Text style={styles.modalBio}>{otherUser.bio}</Text> : null}
-            <View style={styles.modalInfoRow}>
-              <Ionicons name="person-outline" size={20} color="#65676B" />
-              <Text style={styles.modalInfoText}>{otherUser?.name}</Text>
-            </View>
-            <TouchableOpacity onPress={() => setShowInfo(false)} style={styles.modalDone}>
+
+            {isGroup ? (
+              /* ─── GROUP INFO ─── */
+              <>
+                {/* Group avatar */}
+                <View style={[styles.modalAvatarBig, { backgroundColor: "#F0FDF4" }]}>
+                  {convInfo?.avatar ? (
+                    <Image source={{ uri: convInfo.avatar.startsWith("http") ? convInfo.avatar : `https://timquanhday.de/uploads/${convInfo.avatar}` }}
+                      style={{ width: 72, height: 72, borderRadius: 36 }} />
+                  ) : (
+                    <Ionicons name="people" size={32} color="#22C55E" />
+                  )}
+                </View>
+                <Text style={styles.modalName}>{convInfo?.name || "Nhóm"}</Text>
+                <Text style={[styles.modalStatusText, { marginTop: 4 }]}>{convMembers.length} thành viên</Text>
+
+                {/* Rename */}
+                <TouchableOpacity style={styles.modalInfoRow} onPress={() => { setShowGroupRename(true); setShowInfoModal(false); }}>
+                  <Ionicons name="pencil" size={20} color="#65676B" />
+                  <Text style={styles.modalInfoText}>Đổi tên nhóm</Text>
+                </TouchableOpacity>
+
+                {/* Change avatar */}
+                <TouchableOpacity style={styles.modalInfoRow} onPress={async () => {
+                  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.6 });
+                  if (result.canceled || !result.assets?.length) return;
+                  setUploading(true);
+                  const token = await AsyncStorage.getItem("accessToken");
+                  const fd = new FormData();
+                  fd.append("image", { uri: result.assets[0].uri, type: "image/jpeg", name: "avatar.jpg" });
+                  try {
+                    const res = await fetch("https://timquanhday.de/api/upload/image", { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd });
+                    const data = await res.json();
+                    if (data.url) {
+                      await api.patch("/conversations/" + conversationId, { avatar: data.url });
+                      setConvInfo(prev => prev ? { ...prev, avatar: data.url } : prev);
+                    }
+                  } catch (e) {}
+                  setUploading(false);
+                }}>
+                  <Ionicons name="camera" size={20} color="#65676B" />
+                  <Text style={styles.modalInfoText}>Đổi ảnh đại diện nhóm</Text>
+                </TouchableOpacity>
+
+                {/* Member list */}
+                <Text style={{ fontSize: 14, fontWeight: "600", color: "#000", alignSelf: "flex-start", marginTop: 12, marginBottom: 8 }}>Thành viên</Text>
+                {convMembers.map(m => (
+                  <View key={m.id} style={{ flexDirection: "row", alignItems: "center", alignSelf: "stretch", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                      {m.avatar ? <Image source={{ uri: m.avatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                        : <Text style={{ fontSize: 14, fontWeight: "700", color: "#2563EB" }}>{(m.name || "?")[0].toUpperCase()}</Text>}
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "500", color: "#000" }}>{m.name}</Text>
+                      <Text style={{ fontSize: 11, color: "#9CA3AF" }}>{m.is_online ? "Đang hoạt động" : m.last_seen ? `Hoạt động ${formatLastSeen(m.last_seen)}` : ""}</Text>
+                    </View>
+                    {m.is_online ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#22C55E" }} /> : null}
+                  </View>
+                ))}
+
+                {/* Delete conversation */}
+                <TouchableOpacity style={{ flexDirection: "row", alignItems: "center", alignSelf: "stretch", paddingVertical: 14, marginTop: 8 }}
+                  onPress={() => { setShowInfoModal(false);
+                    Alert.alert("Rời nhóm", "Bạn sẽ rời khỏi nhóm này?", [
+                      { text: "Huỷ", style: "cancel" },
+                      { text: "Rời", style: "destructive", onPress: async () => {
+                        try { await api.delete("/conversations/" + conversationId); navigation.goBack(); } catch (e) {}
+                      }},
+                    ]);
+                  }}>
+                  <Ionicons name="exit-outline" size={20} color="#EF4444" />
+                  <Text style={{ fontSize: 15, color: "#EF4444", marginLeft: 12, fontWeight: "500" }}>Rời nhóm</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* ─── PRIVATE CHAT INFO ─── */
+              <>
+                <View style={styles.modalAvatarBig}>
+                  {otherUser?.avatar ? <Image source={{ uri: otherUser.avatar }} style={{ width: 72, height: 72, borderRadius: 36 }} />
+                    : <Text style={styles.modalAvatarText}>{initial}</Text>}
+                  {isOnline && <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: colors.online, borderWidth: 2.5, borderColor: "#fff", position: "absolute", bottom: 2, right: 2 }} />}
+                </View>
+                <Text style={styles.modalName}>{otherUser?.name || "Người dùng"}</Text>
+                <Text style={[styles.modalStatusText, { marginTop: 4 }]}>{isOnline ? "Đang hoạt động" : otherUser?.last_seen ? `Hoạt động ${formatLastSeen(otherUser.last_seen)}` : "Không hoạt động"}</Text>
+                {otherUser?.bio ? <Text style={styles.modalBio}>{otherUser.bio}</Text> : null}
+
+                {/* Nickname */}
+                <TouchableOpacity style={styles.modalInfoRow} onPress={() => { setShowNickname(true); setShowInfoModal(false); }}>
+                  <Ionicons name="pencil" size={20} color="#65676B" />
+                  <Text style={styles.modalInfoText}>{nickname ? `Biệt danh: ${nickname}` : "Đặt biệt danh"}</Text>
+                </TouchableOpacity>
+
+                {/* Block / Unblock */}
+                <TouchableOpacity style={styles.modalInfoRow} onPress={async () => {
+                  if (blockStatus === 'blocked_by_me') {
+                    await api.post("/users/" + receiverId + "/unblock");
+                    setBlockStatus(null);
+                  } else {
+                    await api.post("/users/" + receiverId + "/block");
+                    setBlockStatus('blocked_by_me');
+                  }
+                }}>
+                  <Ionicons name={blockStatus === 'blocked_by_me' ? "unlock" : "lock-closed"} size={20} color="#EF4444" />
+                  <Text style={{ fontSize: 15, color: "#EF4444", marginLeft: 12 }}>
+                    {blockStatus === 'blocked_by_me' ? "Bỏ chặn" : "Chặn người dùng"}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Delete conversation */}
+                <TouchableOpacity style={styles.modalInfoRow} onPress={() => {
+                  Alert.alert("Xóa cuộc trò chuyện", "Toàn bộ lịch sử sẽ bị xóa khỏi danh sách của bạn.", [
+                    { text: "Huỷ", style: "cancel" },
+                    { text: "Xóa", style: "destructive", onPress: async () => {
+                      try { await api.delete("/conversations/" + conversationId); navigation.goBack(); } catch (e) {}
+                    }},
+                  ]);
+                }}>
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                  <Text style={{ fontSize: 15, color: "#EF4444", marginLeft: 12 }}>Xóa cuộc trò chuyện</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity onPress={() => setShowInfoModal(false)} style={styles.modalDone}>
               <Text style={styles.modalDoneText}>Đóng</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* ─── Nickname Edit Modal ──── */}
+      <Modal visible={showNickname} transparent animationType="slide" onRequestClose={() => { setShowNickname(false); setShowInfoModal(true); }}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => { setShowNickname(false); setShowInfoModal(true); }}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalName, { marginBottom: 16 }]}>Đặt biệt danh</Text>
+            <TextInput
+              style={{ width: "100%", backgroundColor: "#F9FAFB", borderRadius: 14, paddingHorizontal: 16, height: 50, fontSize: 15, color: "#000", borderWidth: 1, borderColor: "#E5E7EB" }}
+              placeholder="Nhập biệt danh..."
+              placeholderTextColor="#9CA3AF"
+              value={editNickname}
+              onChangeText={setEditNickname}
+              maxLength={50}
+              autoFocus
+            />
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 16, width: "100%" }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center" }}
+                onPress={async () => {
+                  if (editNickname.trim()) {
+                    await api.put("/conversations/" + conversationId + "/nickname", { nickname: editNickname.trim() });
+                    setNickname(editNickname.trim());
+                  } else {
+                    await api.put("/conversations/" + conversationId + "/nickname", { nickname: "" });
+                    setNickname(null);
+                  }
+                  setShowNickname(false); setShowInfoModal(true);
+                }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: "#000" }}>Lưu</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#FEF2F2", alignItems: "center" }}
+                onPress={async () => {
+                  await api.put("/conversations/" + conversationId + "/nickname", { nickname: "" });
+                  setNickname(""); setEditNickname("");
+                  setShowNickname(false); setShowInfoModal(true);
+                }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: "#EF4444" }}>Xóa biệt danh</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ─── Group Rename Modal ──── */}
+      <Modal visible={showGroupRename} transparent animationType="slide" onRequestClose={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalName, { marginBottom: 16 }]}>Đổi tên nhóm</Text>
+            <TextInput
+              style={{ width: "100%", backgroundColor: "#F9FAFB", borderRadius: 14, paddingHorizontal: 16, height: 50, fontSize: 15, color: "#000", borderWidth: 1, borderColor: "#E5E7EB" }}
+              placeholder="Tên nhóm mới"
+              placeholderTextColor="#9CA3AF"
+              value={groupNameEdit}
+              onChangeText={setGroupNameEdit}
+              maxLength={100}
+              autoFocus
+            />
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 16, width: "100%" }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center" }}
+                onPress={async () => {
+                  if (!groupNameEdit.trim()) return;
+                  await api.patch("/conversations/" + conversationId, { name: groupNameEdit.trim() });
+                  setConvInfo(prev => prev ? { ...prev, name: groupNameEdit.trim() } : prev);
+                  setShowGroupRename(false); setShowInfoModal(true);
+                  navigation.setParams({ name: groupNameEdit.trim() });
+                }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff" }}>Lưu</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center" }}
+                onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>Huỷ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ─── Image Viewer ──── */}
+      <Modal visible={showImageViewer} transparent animationType="fade" onRequestClose={() => setShowImageViewer(false)}>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <TouchableOpacity onPress={() => setShowImageViewer(false)} style={{ position: "absolute", top: 50, left: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          {viewerImages.length > 1 && (
+            <View style={{ position: "absolute", top: 54, right: 16, zIndex: 10 }}>
+              <Text style={{ color: "#fff", fontSize: 14 }}>{viewerIndex + 1} / {viewerImages.length}</Text>
+            </View>
+          )}
+          {viewerImages.length > 0 && (
+            <FlatList
+              data={viewerImages}
+              horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+              initialScrollIndex={viewerIndex}
+              getItemLayout={(_, index) => ({ length: 400, offset: 400 * index, index })}
+              keyExtractor={(_, i) => String(i)}
+              renderItem={({ item }) => (
+                <View style={{ width: "100%", height: "100%", justifyContent: "center", alignItems: "center" }}>
+                  <Image source={{ uri: item }} style={{ width: "100%", height: "80%" }} resizeMode="contain" />
+                </View>
+              )}
+            />
+          )}
+        </View>
       </Modal>
     </KeyboardAvoidingView>
   );
