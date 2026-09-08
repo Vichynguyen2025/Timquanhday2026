@@ -335,68 +335,94 @@ export default function ChatListScreen({ navigation }) {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* ─── Header ──────────────────────── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Chat</Text>
-        <TouchableOpacity style={styles.headerBtn} onPress={openCreateGroup}>
-          <Ionicons name="people-outline" size={22} color={colors.primary} />
-        </TouchableOpacity>
+        <View>
+          <Text style={styles.title}>Messages</Text>
+          <Text style={styles.headerSub}>{conversations.length} cuộc trò chuyện</Text>
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => navigation.navigate("Explore")}>
+            <Ionicons name="location-outline" size={20} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerBtn} onPress={openCreateGroup}>
+            <Ionicons name="people-outline" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* ─── Tab bar ──────────────────────── */}
+      {/* ─── Tab bar (3 tabs) ─────────────── */}
       <View style={styles.tabRow}>
         <TouchableOpacity style={[styles.tab, tab === "chats" && styles.tabActive]} onPress={() => setTab("chats")}>
-          <Ionicons name="chatbubbles" size={16} color={tab === "chats" ? colors.primary : "#9CA3AF"} />
+          <View style={[styles.tabIconWrap, tab === "chats" && styles.tabIconWrapActive]}>
+            <Ionicons name="chatbubbles" size={16} color={tab === "chats" ? "#fff" : colors.primary} />
+          </View>
           <Text style={[styles.tabLabel, tab === "chats" && styles.tabLabelActive]}>Nhắn tin</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.tab, tab === "explore" && styles.tabActive]} onPress={() => { setTab("explore"); navigation.navigate("Explore"); }}>
+          <View style={[styles.tabIconWrap, tab === "explore" && styles.tabIconWrapActive]}>
+            <Ionicons name="location" size={16} color={tab === "explore" ? "#fff" : "#22C55E"} />
+          </View>
+          <Text style={[styles.tabLabel, tab === "explore" && styles.tabLabelActive]}>Khám phá</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={[styles.tab, tab === "suggested" && styles.tabActive]} onPress={() => { setTab("suggested"); fetchNearbyGroups(); }}>
-          <Ionicons name="compass" size={16} color={tab === "suggested" ? colors.primary : "#9CA3AF"} />
+          <View style={[styles.tabIconWrap, tab === "suggested" && styles.tabIconWrapActive]}>
+            <Ionicons name="compass" size={16} color={tab === "suggested" ? "#fff" : "#F59E0B"} />
+          </View>
           <Text style={[styles.tabLabel, tab === "suggested" && styles.tabLabelActive]}>Đề xuất</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ─── Tìm quanh đây CTA (only on chats tab) */}
+      {/* ─── Search (only on chats tab) ──── */}
       {tab === "chats" && (
-        <TouchableOpacity style={styles.exploreCTA} onPress={() => navigation.navigate("Explore")} activeOpacity={0.7}>
-          <View style={styles.exploreCTALeft}>
-            <View style={styles.exploreCTAIcon}>
-              <Ionicons name="location" size={22} color="#fff" />
-            </View>
-            <View style={styles.exploreCTAText}>
-              <Text style={styles.exploreCTATitle}>📍 Tìm quanh đây</Text>
-              <Text style={styles.exploreCTASub}>Khám phá những người đang ở gần bạn</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-        </TouchableOpacity>
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+          <TextInput
+            style={styles.search}
+            placeholder="Tìm kiếm tin nhắn..."
+            placeholderTextColor="#9CA3AF"
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch("")}>
+              <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ─── Radius chips (only on suggested tab) ──── */}
+      {tab === "suggested" && (
+        <View style={{ flexDirection: "row", paddingHorizontal: 16, paddingVertical: 8, gap: 8 }}>
+          {GROUP_RADII.map(r => (
+            <TouchableOpacity key={r} style={[styles.chip, groupRadius === r && styles.chipActive]} onPress={() => { setGroupRadius(r); }}>
+              <Text style={[styles.chipText, groupRadius === r && styles.chipTextActive]}>{r}m</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       )}
 
       {/* ─── Chats tab content ─────────────── */}
       {tab === "chats" && (
         <>
-          {/* Search */}
-          <View style={styles.searchWrap}>
-            <Ionicons name="search" size={18} color={colors.textTertiary} style={{ marginRight: 8 }} />
-            <TextInput
-              style={styles.search}
-              placeholder="Tìm kiếm trên Messenger"
-              placeholderTextColor={colors.textTertiary}
-              value={search}
-              onChangeText={setSearch}
-            />
-          </View>
-
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+            <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
           ) : filtered.length === 0 ? (
             <View style={styles.empty}>
-              <Ionicons name="chatbubbles-outline" size={56} color={colors.textTertiary + "60"} />
+              <View style={styles.emptyIcon}>
+                <Ionicons name="chatbubbles-outline" size={36} color={colors.primary} />
+              </View>
               <Text style={styles.emptyText}>Chưa có tin nhắn</Text>
-              <Text style={styles.emptySub}>Hãy kết nối với mọi người xung quanh</Text>
+              <Text style={styles.emptySub}>Hãy khám phá mọi người xung quanh bạn</Text>
+              <TouchableOpacity style={styles.emptyCTA} onPress={() => navigation.navigate("Explore")}>
+                <Ionicons name="location" size={16} color="#fff" />
+                <Text style={styles.emptyCTAText}>Tìm quanh đây</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <FlatList
               data={filtered}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 80, paddingTop: 4 }}
               renderItem={renderConv}
             />
           )}
@@ -406,28 +432,25 @@ export default function ChatListScreen({ navigation }) {
       {/* ─── Suggested tab content ──────────── */}
       {tab === "suggested" && (
         <>
-          {/* Radius chips */}
-          <View style={{ flexDirection: "row", paddingHorizontal: 12, paddingVertical: 6, gap: 6 }}>
-            {GROUP_RADII.map(r => (
-              <TouchableOpacity key={r} style={[styles.chip, groupRadius === r && styles.chipActive]} onPress={() => { setGroupRadius(r); }}>
-                <Text style={[styles.chipText, groupRadius === r && styles.chipTextActive]}>{r}m</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           {loadingGroups ? (
-            <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
+            <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>
           ) : nearbyGroups.length === 0 ? (
             <View style={styles.empty}>
-              <Ionicons name="people-outline" size={56} color={colors.textTertiary + "60"} />
+              <View style={[styles.emptyIcon, { backgroundColor: "#F0FDF4" }]}>
+                <Ionicons name="people-outline" size={36} color="#22C55E" />
+              </View>
               <Text style={styles.emptyText}>Chưa có nhóm nào gần đây</Text>
               <Text style={styles.emptySub}>Thử mở rộng bán kính hoặc tạo nhóm mới</Text>
+              <TouchableOpacity style={[styles.emptyCTA, { backgroundColor: "#22C55E" }]} onPress={openCreateGroup}>
+                <Ionicons name="add" size={16} color="#fff" />
+                <Text style={styles.emptyCTAText}>Tạo nhóm mới</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <FlatList
               data={nearbyGroups}
               keyExtractor={(item) => item.id}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 80, paddingTop: 4 }}
               renderItem={renderGroup}
             />
           )}
@@ -571,39 +594,42 @@ const sModal = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingBottom: 8 },
-  title: { fontSize: 28, fontWeight: "700", color: "#000" },
-  headerBtn: { padding: 6, width: 36, height: 36, borderRadius: 18, backgroundColor: "#F0F9FF", alignItems: "center", justifyContent: "center" },
+  container: { flex: 1, backgroundColor: "#FAFBFC" },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 8, paddingBottom: 16 },
+  title: { fontSize: 28, fontWeight: "800", color: "#171717", letterSpacing: -0.5 },
+  headerSub: { fontSize: 13, color: "#9CA3AF", marginTop: 2, fontWeight: "400" },
+  headerBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: "#F0F9FF", alignItems: "center", justifyContent: "center" },
 
-  // Tabs
-  tabRow: { flexDirection: "row", paddingHorizontal: 12, gap: 8, marginBottom: 6 },
-  tab: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, backgroundColor: "#F3F4F6" },
-  tabActive: { backgroundColor: colors.primaryLight },
-  tabLabel: { fontSize: 13, color: "#6B7280", fontWeight: "500" },
+  // Tabs (3-tab balanced layout)
+  tabRow: { flexDirection: "row", paddingHorizontal: 16, gap: 8, marginBottom: 12 },
+  tab: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 10, borderRadius: 14, backgroundColor: "#F3F4F6",
+  },
+  tabActive: { backgroundColor: "#EFF6FF", borderWidth: 1, borderColor: "#DBEAFE" },
+  tabIconWrap: { width: 28, height: 28, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.8)", alignItems: "center", justifyContent: "center" },
+  tabIconWrapActive: { backgroundColor: colors.primary },
+  tabLabel: { fontSize: 13, color: "#6B7280", fontWeight: "600" },
   tabLabelActive: { color: colors.primary, fontWeight: "700" },
 
-  // Explore CTA
-  exploreCTA: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#F0F6FF", marginHorizontal: 12, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginBottom: 6 },
-  exploreCTALeft: { flexDirection: "row", alignItems: "center", flex: 1 },
-  exploreCTAIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginRight: 10 },
-  exploreCTATitle: { fontSize: 14, fontWeight: "600", color: "#1E3A5F" },
-  exploreCTASub: { fontSize: 11, color: "#6B7280", marginTop: 1 },
-
   // Search
-  searchWrap: { flexDirection: "row", alignItems: "center", backgroundColor: "#F0F2F5", marginHorizontal: 12, borderRadius: 10, paddingHorizontal: 12, height: 36, marginBottom: 6 },
-  search: { flex: 1, fontSize: 14, color: "#000" },
+  searchWrap: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", marginHorizontal: 16, borderRadius: 12, paddingHorizontal: 12, height: 40, marginBottom: 8, borderWidth: 1, borderColor: "#F3F4F6", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
+  search: { flex: 1, fontSize: 14, color: "#171717" },
 
-  // Chip
-  chip: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: "#F3F4F6" },
+  // Radius chip
+  chip: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 16, backgroundColor: "#F3F4F6" },
   chipActive: { backgroundColor: colors.primary },
-  chipText: { fontSize: 12, color: "#6B7280", fontWeight: "500" },
+  chipText: { fontSize: 12, color: "#6B7280", fontWeight: "600" },
   chipTextActive: { color: "#fff" },
 
-  // Empty
-  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40 },
-  emptyText: { fontSize: 16, fontWeight: "600", color: "#65676B", marginTop: 10 },
-  emptySub: { fontSize: 13, color: "#8A8D91", marginTop: 4, textAlign: "center" },
+  // Empty state
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40, paddingBottom: 60 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: "#EFF6FF", alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  emptyText: { fontSize: 17, fontWeight: "700", color: "#171717", marginBottom: 6 },
+  emptySub: { fontSize: 14, color: "#9CA3AF", textAlign: "center", lineHeight: 20, marginBottom: 20 },
+  emptyCTA: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
+  emptyCTAText: { fontSize: 14, fontWeight: "600", color: "#fff" },
 
   // Conversation item
   convItem: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
