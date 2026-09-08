@@ -112,7 +112,6 @@ export default function ChatListScreen({ navigation }) {
     setGroupMembers([]);
     setGroupUserSearch("");
     setShowCreateGroup(true);
-    // Fetch nearby users for suggestions
     setLoadingNearby(true);
     try {
       const [userRes, nearbyRes] = await Promise.allSettled([
@@ -174,7 +173,7 @@ export default function ChatListScreen({ navigation }) {
 
   const filtered = conversations.filter((c) => (c.display_name || "").toLowerCase().includes(search.toLowerCase()));
 
-  // ─── Render conversation item (EXISTING)─
+  // ─── Mark render conv ──────────────────────
   const renderConv = ({ item }) => (
     <TouchableOpacity
       style={styles.convItem}
@@ -269,7 +268,7 @@ export default function ChatListScreen({ navigation }) {
   // ════════════════════════════════════════
   // CREATE GROUP MODAL — Vercel-inspired design
   // ════════════════════════════════════════
-  const CreateGroupModal = () => (
+  const CreateGroupModal = (
     <Modal visible={showCreateGroup} transparent animationType="slide" onRequestClose={() => setShowCreateGroup(false)}>
       <View style={sModal.overlay}>
         <View style={sModal.container}>
