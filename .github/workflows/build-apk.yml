@@ -1,0 +1,79 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build profile'
+        default: 'preview'
+        required: false
+        type: choice
+        options:
+          - preview
+          - production
+  push:
+    branches: [develop, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK with EAS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./apps/mobile-expo
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ./apps/mobile-expo/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Update EAS project ID
+        run: |
+          if [ -n "${{ secrets.EAS_PROJECT_ID }}" ]; then
+            sed -i "s/YOUR_EAS_PROJECT_ID/${{ secrets.EAS_PROJECT_ID }}/g" app.json
+          fi
+
+      - name: Build APK (cloud)
+        run: |
+          PROFILE="${{ github.event.inputs.profile || 'preview' }}"
+          echo "=== Submitting EAS Build ($PROFILE) ==="
+          OUTPUT=$(eas build --platform android --profile $PROFILE --non-interactive 2>&1)
+          echo "$OUTPUT"
+          # Extract build URL
+          echo "BUILD_URL=$(echo "$OUTPUT" | grep -oP 'https://expo\.dev/accounts/[^ ]+/projects/[^ ]+/builds/[^ ]+' | head -1)" >> $GITHUB_ENV
+
+      - name: Summary
+        run: |
+          echo "## ✅ APK Build submitted!" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$BUILD_URL" ]; then
+            echo "📱 [View build progress]($BUILD_URL)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Profile | ${{ github.event.inputs.profile || 'preview' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ⏳ APK đang được build trên EAS cloud. Nhận kết quả tại link trên hoặc trong EAS dashboard." >> $GITHUB_STEP_SUMMARY
