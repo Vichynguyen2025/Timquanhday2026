@@ -101,26 +101,19 @@ export default function ChatListScreen({ navigation }) {
         />
       </View>
 
-      {/* Stories / Active now */}
-      <View style={styles.activeRow}>
-        <View style={styles.activeStory}>
-          <View style={[styles.activeRing, { borderColor: colors.primary }]}>
-            <Ionicons name="camera" size={20} color={colors.primary} />
+      {/* Tìm quanh đây CTA */}
+      <TouchableOpacity style={styles.exploreCTA} onPress={() => navigation.navigate("Explore")} activeOpacity={0.7}>
+        <View style={styles.exploreCTALeft}>
+          <View style={styles.exploreCTAIcon}>
+            <Ionicons name="location" size={22} color="#fff" />
           </View>
-          <Text style={styles.activeLabel}>Tin của bạn</Text>
+          <View style={styles.exploreCTAText}>
+            <Text style={styles.exploreCTATitle}>📍 Tìm quanh đây</Text>
+            <Text style={styles.exploreCTASub}>Khám phá những người đang ở gần bạn</Text>
+          </View>
         </View>
-        {conversations.filter(c => {
-          const otherId = c.participants?.[0];
-          return otherId && onlineUsers.has(otherId);
-        }).slice(0, 5).map(c => (
-          <View key={c.id} style={styles.activeStory}>
-            <View style={[styles.activeRing, { borderColor: colors.online }]}>
-              <Text style={styles.activeAvatar}>{(c.display_name || "?")[0].toUpperCase()}</Text>
-            </View>
-            <Text style={styles.activeLabel} numberOfLines={1}>{c.display_name}</Text>
-          </View>
-        ))}
-      </View>
+        <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
+      </TouchableOpacity>
 
       {/* List */}
       {loading ? (
@@ -210,15 +203,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, height: 38, marginBottom: 8,
   },
   search: { flex: 1, fontSize: 15, color: "#000" },
-  // Active now
-  activeRow: {
-    flexDirection: "row", paddingHorizontal: 12, paddingVertical: 8,
-    borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5", marginBottom: 4,
+  // Tìm quanh đây CTA
+  exploreCTA: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: "#F0F6FF", marginHorizontal: 12,
+    paddingVertical: 12, paddingHorizontal: 14,
+    borderRadius: 12, marginBottom: 8,
   },
-  activeStory: { alignItems: "center", marginRight: 14, width: 58 },
-  activeRing: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center", borderWidth: 2.5 },
-  activeAvatar: { fontSize: 20, fontWeight: "600", color: "#000" },
-  activeLabel: { fontSize: 11, color: "#65676B", marginTop: 4, textAlign: "center" },
+  exploreCTALeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  exploreCTAIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center", marginRight: 12,
+  },
+  exploreCTATitle: { fontSize: 15, fontWeight: "600", color: "#1E3A5F" },
+  exploreCTASub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
   // Empty
   empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 40 },
   emptyText: { fontSize: 17, fontWeight: "600", color: "#65676B", marginTop: 12 },
