@@ -265,8 +265,6 @@ export default function ChatListScreen({ navigation }) {
     </TouchableOpacity>
   );
 
-  );
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* ─── Header ──────────────────────── */}
