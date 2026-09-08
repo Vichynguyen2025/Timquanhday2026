@@ -185,7 +185,7 @@ export default function ExploreScreen() {
                       <Text style={styles.markerAvatarText}>{(u.name || "?")[0].toUpperCase()}</Text>
                     )}
                   </View>
-                  {u.is_online && <View style={styles.markerOnline} />}
+                  {u.is_online ? <View style={styles.markerOnline} /> : null}
                 </View>
               </Marker>
             ))}
