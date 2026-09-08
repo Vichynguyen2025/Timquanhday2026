@@ -186,7 +186,7 @@ export default function NotificationsScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Text style={styles.title}>Thông báo</Text>
