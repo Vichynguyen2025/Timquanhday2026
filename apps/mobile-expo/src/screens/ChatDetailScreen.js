@@ -329,7 +329,7 @@ export default function ChatDetailScreen({ route, navigation }) {
       const socket = getSocket();
       for (let i = 0; i < data.images.length; i++) {
         const img = data.images[i];
-        const tempId = "img_" + Date.now() + "_" + i;
+        const tempId = "img_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
         const optimisticMsg = {
           id: tempId, conversation_id: conversationId, sender_id: user.id,
           content: "", type: "image", metadata: { attachmentUrl: img.url },
@@ -361,10 +361,55 @@ export default function ChatDetailScreen({ route, navigation }) {
   // ── Single image (legacy) ──
   async function sendImage() {
     if (!selectedImage || !user?.id) return;
-    setMultiImages([{ uri: selectedImage.uri, name: selectedImage.fileName || 'photo.jpg' }]);
-    await sendMultiImages();
+    const imgs = [{ uri: selectedImage.uri, name: selectedImage.fileName || 'photo.jpg' }];
+    setMultiImages(imgs);
     setSelectedImage(null);
     setPreviewUrl(null);
+    // Send directly with local variable — avoids stale closure
+    if (!imgs.length) return;
+    setUploading(true);
+    setUploadProgress(`Đang tải 1 ảnh...`);
+    const token = await AsyncStorage.getItem("accessToken");
+    const formData = new FormData();
+    for (const img of imgs) {
+      formData.append("images", { uri: img.uri, type: "image/jpeg", name: img.name });
+    }
+    try {
+      const res = await fetch("https://timquanhday.de/api/upload/images", {
+        method: "POST", headers: { Authorization: "Bearer " + token }, body: formData,
+      });
+      const data = await res.json();
+      if (!data?.images?.length) { setUploading(false); return; }
+      setUploadProgress(`Đang gửi 1 ảnh...`);
+      const socket = getSocket();
+      for (let i = 0; i < data.images.length; i++) {
+        const img = data.images[i];
+        const tId = "img_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+        const optimisticMsg = {
+          id: tId, conversation_id: conversationId, sender_id: user.id,
+          content: "", type: "image", metadata: { attachmentUrl: img.url },
+          created_at: new Date().toISOString(), status: "sending", client_temp_id: tId, sender_name: user.name,
+        };
+        setMessages((prev) => [...prev, optimisticMsg]);
+        if (socket) {
+          socket.emit("message:send", {
+            conversationId, content: "", type: "image", receiverId, tempId: tId,
+            attachmentUrl: img.url, attachmentName: img.filename,
+          }, (response) => {
+            if (response?.success) {
+              setMessages((prev) => {
+                const idx = prev.findIndex((m) => m.id === tId || m.client_temp_id === tId);
+                if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], id: response.messageId, status: "sent" }; return next; }
+                return prev;
+              });
+            }
+          });
+        }
+      }
+    } catch (e) { Alert.alert("Lỗi", "Không thể gửi ảnh"); }
+    setMultiImages([]);
+    setUploading(false);
+    setUploadProgress(null);
   }
 
   // ── Pick file + send ──
@@ -609,7 +654,7 @@ export default function ChatDetailScreen({ route, navigation }) {
               {multiImages.map((img, i) => (
                 <Image key={i} source={{ uri: img.uri }} style={{ width: 50, height: 50, borderRadius: 8 }} />
               ))}
-              <TouchableOpacity onPress={() => setMultiImages([])} style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center" }}>
+              <TouchableOpacity onPress={cancelAttachment} style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: "#F3F4F6", alignItems: "center", justifyContent: "center" }}>
                 <Ionicons name="close" size={20} color="#6B7280" />
               </TouchableOpacity>
               <TouchableOpacity onPress={sendMultiImages} style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
