@@ -33,7 +33,7 @@ router.get('/search', authenticate, async (req, res) => {
 // Update profile (whitelist fields only)
 router.patch('/me', authenticate, async (req, res) => {
   try {
-    const allowedFields = ['name', 'bio', 'avatar', 'gender', 'birth_year', 'hometown', 'occupation', 'school'];
+    const allowedFields = ['name', 'bio', 'avatar', 'gender', 'birth_year', 'hometown', 'occupation', 'school', 'visible_on_map'];
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) updates[field] = req.body[field];
@@ -54,7 +54,7 @@ router.patch('/me', authenticate, async (req, res) => {
     } else {
       await query(`UPDATE users SET ${setClauses} WHERE id = ?`, [...values, req.user.id]);
     }
-    const user = await queryOne('SELECT id, name, email, phone, avatar, avatar_version, bio, gender, birth_year, hometown, occupation, school, location_enabled FROM users WHERE id = ?', [req.user.id]);
+    const user = await queryOne('SELECT id, name, email, phone, avatar, avatar_version, bio, gender, birth_year, hometown, occupation, school, location_enabled, visible_on_map FROM users WHERE id = ?', [req.user.id]);
     // Apply version to avatar URL for cache invalidation
     if (user && user.avatar) {
       user.avatar = versionedAvatar(user.avatar, user.avatar_version);
