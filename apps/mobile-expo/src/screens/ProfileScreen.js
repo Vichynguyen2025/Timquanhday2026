@@ -191,6 +191,40 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.name}>{p?.name}</Text>
           {p?.bio ? <Text style={styles.bio}>{p.bio}</Text> : null}
 
+          {/* Profile details */}
+          <View style={styles.detailsRow}>
+            {p?.gender ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="male-female" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{p.gender}</Text>
+              </View>
+            ) : null}
+            {p?.birth_year ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="calendar-outline" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{p.birth_year}</Text>
+              </View>
+            ) : null}
+            {p?.hometown ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="home-outline" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{p.hometown}</Text>
+              </View>
+            ) : null}
+            {p?.occupation ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="briefcase-outline" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{p.occupation}</Text>
+              </View>
+            ) : null}
+            {p?.school ? (
+              <View style={styles.detailChip}>
+                <Ionicons name="school-outline" size={14} color="#6B7280" />
+                <Text style={styles.detailText}>{p.school}</Text>
+              </View>
+            ) : null}
+          </View>
+
           <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate("EditProfile")}>
             <Ionicons name="create-outline" size={15} color={colors.primary} />
             <Text style={styles.editBtnText}>Chỉnh sửa trang cá nhân</Text>
@@ -412,6 +446,11 @@ const styles = StyleSheet.create({
   bio: { fontSize: 14, color: "#374151", marginTop: 6, textAlign: "center", lineHeight: 20, paddingHorizontal: 20 },
   editBtn: { flexDirection: "row", alignItems: "center", marginTop: 14, paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.primary, gap: 6 },
   editBtnText: { fontSize: 13, fontWeight: "600", color: colors.primary },
+
+  // Profile details
+  detailsRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8, marginTop: 10, paddingHorizontal: 16 },
+  detailChip: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F3F4F6", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16 },
+  detailText: { fontSize: 12, color: "#6B7280" },
 
   // Stats
   statsRow: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: "#E5E7EB" },

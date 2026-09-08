@@ -66,13 +66,71 @@ class ChatProvider extends ChangeNotifier {
   Map<String, bool> _hasMoreCache = {};
   Map<String, ConversationMember?> _otherUserCache = {};
   bool _loadingConversations = false;
+  StreamSubscription? _msgSub;
+  String? _currentUserId;
+  int _unreadMessageCount = 0;
+
+  set currentUserId(String? id) {
+    _currentUserId = id;
+  }
 
   List<Conversation> get conversations => _conversations;
   bool get loadingConversations => _loadingConversations;
+  int get unreadMessageCount => _unreadMessageCount;
 
   List<Message> getMessages(String convId) => _messagesCache[convId] ?? [];
   bool hasMore(String convId) => _hasMoreCache[convId] ?? true;
   ConversationMember? getOtherUser(String convId) => _otherUserCache[convId];
+
+  // ─── PERSISTENT socket listener — giống Web ChatPage.jsx dòng 251-317 ──
+  ChatProvider() {
+    _msgSub = _socket.onMessage.listen((data) {
+      try {
+        final convId = data['conversation_id']?.toString();
+        if (convId == null) return;
+
+        // #A — Bỏ qua self-message
+        if (data['sender_id'] == _currentUserId) return;
+
+        debugPrint('[CHAT_PROVIDER] message:new conv=$convId sender=${data['sender_id']} content=${(data['content'] as String?)?.length ?? 0}chars');
+
+        final msg = Message.fromJson(data);
+
+        // #B — Update messages cache nếu conv đang được load
+        if (_messagesCache.containsKey(convId)) {
+          addIncomingMessage(convId, msg);
+        }
+
+        // #C — LUÔN update conversation list
+        final convIdx = _conversations.indexWhere((c) => c.id == convId);
+        if (convIdx >= 0) {
+          final old = _conversations[convIdx];
+          _conversations[convIdx] = Conversation(
+            id: old.id, type: old.type, name: old.name,
+            lastMessage: msg.content.isEmpty ? '📷 Ảnh' : msg.content,
+            lastMessageAt: msg.createdAt,
+            unreadCount: old.unreadCount + 1,
+            displayName: old.displayName, avatar: old.avatar,
+            isOnline: old.isOnline, participants: old.participants,
+          );
+          _conversations.sort((a, b) => (b.lastMessageAt ?? '').compareTo(a.lastMessageAt ?? ''));
+          debugPrint('[CHAT_PROVIDER] updated conv ${convId.substring(0, 8)} last="${msg.content.substring(0, 20)}" sort=1');
+        }
+        _unreadMessageCount++;
+        notifyListeners();
+        debugPrint('[CHAT_PROVIDER] notifyListeners called');
+      } catch (e) {
+        debugPrint('[CHAT_PROVIDER] ERROR in listener: $e');
+      }
+    });
+    debugPrint('[CHAT_PROVIDER] socket listener registered');
+  }
+
+  @override
+  void dispose() {
+    _msgSub?.cancel();
+    super.dispose();
+  }
 
   Future<void> fetchConversations() async {
     _loadingConversations = true;

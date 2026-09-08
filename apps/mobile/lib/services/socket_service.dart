@@ -39,15 +39,16 @@ class SocketService {
 
     _socket!.onConnect((_) {
       _connected = true;
-      print('[Socket] Connected');
+      debugPrint('[SOCKET] Connected — path=${ApiConfig.socketPath} url=${ApiConfig.socketUrl}');
     });
 
     _socket!.onDisconnect((_) {
       _connected = false;
-      print('[Socket] Disconnected');
+      debugPrint('[SOCKET] Disconnected');
     });
 
     _socket!.on('message:new', (data) {
+      debugPrint('[SOCKET] message:new arrived conv=${(data as Map)["conversation_id"]?.toString()?.substring(0, 8)}');
       _messageController.add(data as Map<String, dynamic>);
     });
 

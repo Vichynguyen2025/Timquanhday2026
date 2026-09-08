@@ -89,6 +89,111 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
+// ─── Create group chat ─────────────────────
+router.post('/group', authenticate, async (req, res) => {
+  try {
+    const { name, memberIds, lat, lng } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Group name required' });
+    if (!memberIds || !Array.isArray(memberIds) || memberIds.length < 2) {
+      return res.status(400).json({ error: 'At least 2 other members required' });
+    }
+    // Include creator in members
+    const allIds = [req.user.id, ...memberIds.filter(id => id !== req.user.id)];
+    const convId = crypto.randomUUID();
+
+    await query(
+      'INSERT INTO conversations (id, type, name, lat, lng) VALUES (?, ?, ?, ?, ?)',
+      [convId, 'group', name.trim(), lat || null, lng || null]
+    );
+
+    const values = allIds.map(uid => `('${convId}', '${uid}')`).join(', ');
+    await query(`INSERT INTO conversation_members (conversation_id, user_id) VALUES ${values}`);
+
+    // Emit to all members that a new group was created
+    if (req.app?.get('io')) {
+      const io = req.app.get('io');
+      for (const uid of allIds) {
+        io.to(`user:${uid}`).emit('conversation:new', { id: convId });
+      }
+    }
+
+    res.json({ id: convId, name: name.trim(), type: 'group' });
+  } catch (err) {
+    console.error('[Group] Create error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Get nearby groups (by member proximity) ──
+router.get('/nearby-groups', authenticate, async (req, res) => {
+  try {
+    const radius = parseInt(req.query.radius || '500');
+    const validRadii = [100, 200, 500];
+    if (!validRadii.includes(radius)) {
+      return res.status(400).json({ error: `Invalid radius. Allowed: ${validRadii.join(', ')}` });
+    }
+
+    // Get current user location
+    const userLoc = await queryOne('SELECT lat, lng FROM user_locations WHERE user_id = ?', [req.user.id]);
+    if (!userLoc) return res.json({ groups: [] });
+
+    const { haversineDistance } = require('../utils/helpers.js');
+
+    // Find groups where at least one member (not the current user) is within radius
+    const groups = await query(`
+      SELECT DISTINCT c.id, c.name, c.type, c.lat, c.lng, c.created_at,
+        (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
+        (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at
+      FROM conversations c
+      JOIN conversation_members cm ON c.id = cm.conversation_id AND cm.user_id != ? AND cm.deleted_at IS NULL
+      JOIN user_locations ul ON ul.user_id = cm.user_id AND ul.lat IS NOT NULL
+      WHERE c.type = 'group'
+      AND c.id NOT IN (
+        SELECT cm2.conversation_id FROM conversation_members cm2 WHERE cm2.user_id = ? AND cm2.deleted_at IS NOT NULL
+      )`, [req.user.id, req.user.id]
+    );
+
+    // Calculate distance and filter
+    const result = [];
+    for (const g of groups) {
+      // For groups with their own lat/lng, use that
+      if (g.lat && g.lng) {
+        const dist = haversineDistance(userLoc.lat, userLoc.lng, g.lat, g.lng) * 1000;
+        if (dist <= radius) {
+          result.push({ ...g, distance: Math.round(dist) });
+        }
+        continue;
+      }
+      // Otherwise calculate from nearest member
+      const memberLocs = await query(`
+        SELECT ul.lat, ul.lng
+        FROM conversation_members cm
+        JOIN user_locations ul ON ul.user_id = cm.user_id
+        WHERE cm.conversation_id = ? AND cm.user_id != ? AND ul.lat IS NOT NULL
+      `, [g.id, req.user.id]);
+      let minDist = Infinity;
+      for (const ml of memberLocs) {
+        const dist = haversineDistance(userLoc.lat, userLoc.lng, ml.lat, ml.lng) * 1000;
+        if (dist < minDist) minDist = dist;
+      }
+      if (minDist <= radius) {
+        // Get member details
+        const members = await query(`
+          SELECT u.id, u.name, u.avatar FROM conversation_members cm
+          JOIN users u ON u.id = cm.user_id
+          WHERE cm.conversation_id = ? AND cm.deleted_at IS NULL LIMIT 4
+        `, [g.id]);
+        result.push({ ...g, distance: Math.round(minDist), members });
+      }
+    }
+
+    res.json({ groups: result.sort((a, b) => a.distance - b.distance), radius });
+  } catch (err) {
+    console.error('[NearbyGroups] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Delete conversation (for current user only)
 router.delete('/:id', authenticate, async (req, res) => {
   try {

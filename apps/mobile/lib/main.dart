@@ -6,6 +6,7 @@ import 'services/socket_service.dart';
 import 'services/api_service.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
+import 'screens/auth/splash_screen.dart';
 import 'screens/chat/chat_list_screen.dart';
 import 'screens/feed/feed_screen.dart';
 import 'screens/location/location_screen.dart';
@@ -38,61 +39,6 @@ class TimQuanhDayApp extends StatelessWidget {
           '/register': (context) => const RegisterScreen(),
           '/home': (context) => const HomeScreen(),
         },
-      ),
-    );
-  }
-}
-
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  @override
-  void initState() {
-    super.initState();
-    _checkAuth();
-  }
-
-  Future<void> _checkAuth() async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    final auth = context.read<AuthProvider>();
-    if (auth.isLoggedIn) {
-      // Connect socket
-      final token = await ApiService().getToken();
-      if (token != null) {
-        SocketService().connect(token);
-      }
-      Navigator.pushReplacementNamed(context, '/home');
-    } else {
-      Navigator.pushReplacementNamed(context, '/login');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(
-                color: AppTheme.primaryLight,
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: const Icon(Icons.chat_bubble_rounded, size: 40, color: AppTheme.primary),
-            ),
-            const SizedBox(height: 16),
-            const Text('TimQuanhDay', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)),
-            const SizedBox(height: 24),
-            const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)),
-          ],
-        ),
       ),
     );
   }
@@ -134,32 +80,32 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: Consumer<NotificationProvider>(
         builder: (context, notif, _) {
           final notifUnread = notif.unreadCount;
-          return BottomNavigationBar(
-            currentIndex: _currentIndex,
-            onTap: (i) {
-              setState(() => _currentIndex = i);
-              // Refresh notifications when switching to the tab
-              if (i == 3) notif.fetchNotifications();
+          return Consumer<ChatProvider>(
+            builder: (context, chat, _) {
+              final msgUnread = chat.unreadMessageCount;
+              return BottomNavigationBar(
+                currentIndex: _currentIndex,
+                onTap: (i) {
+                  setState(() => _currentIndex = i);
+                  if (i == 3) notif.fetchNotifications();
+                },
+                items: [
+                  BottomNavigationBarItem(
+                    icon: _BadgedIcon(icon: Icons.chat_bubble_outline, badge: msgUnread, active: false),
+                    activeIcon: _BadgedIcon(icon: Icons.chat_bubble, badge: msgUnread, active: true),
+                    label: 'Tin nhắn',
+                  ),
+                  const BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), activeIcon: Icon(Icons.explore), label: 'Khám phá'),
+                  const BottomNavigationBarItem(icon: Icon(Icons.map_outlined), activeIcon: Icon(Icons.map), label: 'Vị trí'),
+                  BottomNavigationBarItem(
+                    icon: _BadgedIcon(icon: Icons.notifications_outlined, badge: notifUnread, active: false),
+                    activeIcon: _BadgedIcon(icon: Icons.notifications, badge: notifUnread, active: true),
+                    label: 'Thông báo',
+                  ),
+                  const BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Cá nhân'),
+                ],
+              );
             },
-            items: const [
-              BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), activeIcon: Icon(Icons.chat_bubble), label: 'Tin nhắn'),
-              BottomNavigationBarItem(icon: Icon(Icons.explore_outlined), activeIcon: Icon(Icons.explore), label: 'Khám phá'),
-              BottomNavigationBarItem(icon: Icon(Icons.map_outlined), activeIcon: Icon(Icons.map), label: 'Vị trí'),
-              BottomNavigationBarItem(
-                icon: _BadgedIcon(
-                  icon: Icons.notifications_outlined,
-                  badge: notifUnread,
-                  active: false,
-                ),
-                activeIcon: _BadgedIcon(
-                  icon: Icons.notifications,
-                  badge: notifUnread,
-                  active: true,
-                ),
-                label: 'Thông báo',
-              ),
-              BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Cá nhân'),
-            ],
           );
         },
       ),

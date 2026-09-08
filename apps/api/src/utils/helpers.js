@@ -12,12 +12,12 @@ export function haversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 export async function getNearbyUsers(lat, lng, radiusKm, excludeUserId = null) {
-  // Get all users with locations
+  // Get visible users with locations + profile fields for filtering
   const users = await query(`
-    SELECT u.id, u.name, u.avatar, u.is_online, ul.lat, ul.lng
+    SELECT u.id, u.name, u.avatar, u.bio, u.gender, u.occupation, u.school, u.is_online, u.last_seen, ul.lat, ul.lng
     FROM user_locations ul
     JOIN users u ON u.id = ul.user_id
-    WHERE ul.lat IS NOT NULL
+    WHERE ul.lat IS NOT NULL AND u.visible_on_map = 1
     ${excludeUserId ? 'AND u.id != ?' : ''}
   `, excludeUserId ? [excludeUserId] : []);
 
