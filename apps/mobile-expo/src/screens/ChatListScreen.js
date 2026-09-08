@@ -103,20 +103,32 @@ export default function ChatListScreen({ navigation }) {
   // �════════════════════════════════════════
   // GROUP CHAT FUNCTIONS
   // �════════════════════════════════════════
+  const [nearbyUsers, setNearbyUsers] = useState([]);
+  const [loadingNearby, setLoadingNearby] = useState(false);
+  const [groupUserSearch, setGroupUserSearch] = useState("");
+
   async function openCreateGroup() {
     setGroupName("");
     setGroupMembers([]);
-    setUserSearch("");
-    try {
-      const res = await api.get("/users/search", { params: { q: "" } });
-      setAllUsers(res.data || []);
-    } catch {}
+    setGroupUserSearch("");
     setShowCreateGroup(true);
+    // Fetch nearby users for suggestions
+    setLoadingNearby(true);
+    try {
+      const [userRes, nearbyRes] = await Promise.allSettled([
+        api.get("/users/search", { params: { q: "" } }),
+        api.get("/location/nearby", { params: { radius: 500 } }),
+      ]);
+      if (userRes.status === "fulfilled") setAllUsers(userRes.value.data || []);
+      if (nearbyRes.status === "fulfilled") setNearbyUsers(nearbyRes.value.data?.users || []);
+    } catch {}
+    setLoadingNearby(false);
   }
 
   function toggleMember(u) {
     setGroupMembers(prev =>
-      prev.find(m => m.id === u.id) ? prev.filter(m => m.id !== u.id) : [...prev, u]    );
+      prev.find(m => m.id === u.id) ? prev.filter(m => m.id !== u.id) : [...prev, u]
+    );
   }
 
   async function handleCreateGroup() {
@@ -134,8 +146,7 @@ export default function ChatListScreen({ navigation }) {
         navigation.navigate("ChatDetail", { conversationId: res.data.id, name: groupName.trim() });
         fetchConversations();
       }
-    } catch (e) {      Alert.alert("Lỗi", "Không thể tạo nhóm");
-    }
+    } catch (e) { Alert.alert("Lỗi", "Không thể tạo nhóm"); }
     setCreating(false);
   }
 
@@ -148,10 +159,17 @@ export default function ChatListScreen({ navigation }) {
     setLoadingGroups(false);
   }
 
-  useFocusEffect(useCallback(() => {    if (tab === "suggested") fetchNearbyGroups();
-  }, [tab, groupRadius]}),     const filteredUsers = allUsers.filter(u =>
+  useFocusEffect(useCallback(() => {
+    if (tab === "suggested") fetchNearbyGroups();
+  }, [tab, groupRadius]));
+
+  const filteredUsers = allUsers.filter(u =>
     u.id !== currentUserId && !groupMembers.find(m => m.id === u.id) &&
-    (u.name || "").toLowerCase().includes(userSearch.toLowerCase())
+    (u.name || "").toLowerCase().includes(groupUserSearch.toLowerCase())
+  );
+
+  const suggestedNearby = nearbyUsers.filter(u =>
+    u.id !== currentUserId && !groupMembers.find(m => m.id === u.id)
   );
 
   const filtered = conversations.filter((c) => (c.display_name || "").toLowerCase().includes(search.toLowerCase()));
@@ -249,79 +267,167 @@ export default function ChatListScreen({ navigation }) {
   );
 
   // ════════════════════════════════════════
-  // CREATE GROUP MODAL
+  // CREATE GROUP MODAL — Vercel-inspired design
   // ════════════════════════════════════════
   const CreateGroupModal = () => (
-    <Modal visible={showCreateGroup} transparent animationType="slide">
+    <Modal visible={showCreateGroup} transparent animationType="slide" onRequestClose={() => setShowCreateGroup(false)}>
       <View style={sModal.overlay}>
         <View style={sModal.container}>
+          {/* Handle bar */}
+          <View style={sModal.handleBar} />
+
+          {/* Header */}
           <View style={sModal.header}>
-            <TouchableOpacity onPress={() => setShowCreateGroup(false)}>
-              <Ionicons name="close" size={24} color="#111827" />
+            <TouchableOpacity onPress={() => setShowCreateGroup(false)} style={sModal.headerBtn}>
+              <Ionicons name="close" size={22} color="#6B7280" />
             </TouchableOpacity>
             <Text style={sModal.title}>Tạo nhóm mới</Text>
-            <TouchableOpacity onPress={handleCreateGroup} disabled={creating}>
-              {creating ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={sModal.doneBtn}>Tạo</Text>}
+            <TouchableOpacity onPress={handleCreateGroup} disabled={creating} style={[sModal.headerBtn, creating && { opacity: 0.5 }]}>
+              {creating ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Text style={[sModal.doneBtn, (!groupName.trim() || groupMembers.length < 2) && { opacity: 0.4 }]}>Tạo</Text>
+              )}
             </TouchableOpacity>
           </View>
 
-          <View style={sModal.body}>
+          {/* Group name input */}
+          <View style={sModal.nameRow}>
+            <View style={sModal.nameIcon}>
+              <Ionicons name="people" size={18} color={colors.primary} />
+            </View>
             <TextInput
-              style={sModal.input}
+              style={sModal.nameInput}
               placeholder="Tên nhóm"
               placeholderTextColor="#9CA3AF"
               value={groupName}
               onChangeText={setGroupName}
               maxLength={100}
+              autoFocus
             />
+          </View>
 
-            <Text style={sModal.sectionTitle}>Thêm thành viên ({groupMembers.length} / tối	hiểu 2)</Text>
+          {/* Selected members */}
+          {groupMembers.length > 0 && (
+            <View style={sModal.selectedRow}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {groupMembers.map(m => (
+                  <TouchableOpacity key={m.id} style={sModal.selectedChip} onPress={() => toggleMember(m)}>
+                    <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                      {m.avatar ? (
+                        <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }}
+                          style={{ width: 28, height: 28, borderRadius: 14 }} />
+                      ) : (
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>
+                      )}
+                    </View>
+                    <Text style={sModal.selectedName} numberOfLines={1}>{m.name}</Text>
+                    <Ionicons name="close-circle" size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
 
+          {/* Search */}
+          <View style={sModal.searchRow}>
+            <Ionicons name="search" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
             <TextInput
               style={sModal.searchInput}
               placeholder="Tìm kiếm người dùng..."
               placeholderTextColor="#9CA3AF"
-              value={userSearch}
-              onChangeText={setUserSearch}
+              value={groupUserSearch}
+              onChangeText={setGroupUserSearch}
             />
+            {groupUserSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setGroupUserSearch("")}>
+                <Ionicons name="close-circle" size={16} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
+          </View>
 
-            {/* Selected members preview */}
-            {groupMembers.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingVertical: 8 }}>
-                {groupMembers.map(m => (
-                  <TouchableOpacity key={m.id} style={sModal.selectedChip} onPress={() => toggleMember(m)}>
-                    <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                      {m.avatar ? <Image source={{ uri: m.avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} />
-                        : <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>}
-                    </View>
-                    <Text style={{ fontSize: 12, color: "#111827", marginLeft: 4 }}>{m.name}</Text>
-                    <Ionicons name="close-circle" size={16} color="#EF4444" style={{ marginLeft: 4 }} />
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+          {/* Body */}
+          <View style={sModal.body}>
+            {/* Suggested nearby users */}
+            {!groupUserSearch && suggestedNearby.length > 0 && (
+              <>
+                <Text style={sModal.sectionTitle}>
+                  <Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn
+                </Text>
+                {loadingNearby ? (
+                  <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} />
+                ) : (
+                  <FlatList
+                    data={suggestedNearby}
+                    keyExtractor={(item) => `nearby-${item.id}`}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity style={sModal.suggestedCard} onPress={() => toggleMember(item)} activeOpacity={0.7}>
+                        <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                          {item.avatar ? (
+                            <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }}
+                              style={{ width: 48, height: 48, borderRadius: 24 }} />
+                          ) : (
+                            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>
+                          )}
+                          {item.is_online ? <View style={sModal.suggestedOnline} /> : null}
+                        </View>
+                        <Text style={sModal.suggestedName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={sModal.suggestedDist}>{item.distance ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : ""}</Text>
+                        <View style={[sModal.addBtn, groupMembers.find(m => m.id === item.id) && sModal.addBtnActive]}>
+                          <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={18} color="#fff" />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  />
+                )}
+              </>
             )}
 
+            {/* All users list */}
+            <Text style={sModal.sectionTitle}>
+              <Ionicons name="people" size={12} color="#6B7280" />  Tất cả người dùng
+            </Text>
             <FlatList
               data={filteredUsers}
               keyExtractor={(item) => item.id}
-              style={{ flex: 1 }}
+              style={sModal.userList}
+              showsVerticalScrollIndicator={false}
               ListEmptyComponent={
-                <Text style={{ textAlign: "center", color: "#9CA3AF", paddingTop: 20 }}>Không tìm thấy người dùng</Text>
+                <View style={{ alignItems: "center", paddingTop: 24 }}>
+                  <Ionicons name="search-outline" size={32} color="#D1D5DB" />
+                  <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 8 }}>Không tìm thấy người dùng</Text>
+                </View>
               }
-              renderItem={({ item }) => (
-                <TouchableOpacity style={sModal.userItem} onPress={() => toggleMember(item)}>
-                  <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                    {item.avatar ? <Image source={{ uri: item.avatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
-                      : <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
-                  </View>
-                  <Text style={{ flex: 1, fontSize: 14, color: "#111827", marginLeft: 10 }}>{item.name}</Text>
-                  {groupMembers.find(m => m.id === item.id) ? (
-                    <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-                  ) : (
-                    <Ionicons name="add-circle-outline" size={22} color="#D1D5DB" />
-                  )}
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                const selected = !!groupMembers.find(m => m.id === item.id);
+                const nearbySuggestion = suggestedNearby.find(s => s.id === item.id);
+                return (
+                  <TouchableOpacity style={sModal.userItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                      {item.avatar ? (
+                        <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }}
+                          style={{ width: 40, height: 40, borderRadius: 20 }} />
+                      ) : (
+                        <Text style={{ fontSize: 16, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
+                      {nearbySuggestion?.distance != null && (
+                        <Text style={{ fontSize: 11, color: "#22C55E" }}>
+                          🧭 {nearbySuggestion.distance < 1000 ? `${nearbySuggestion.distance}m` : `${(nearbySuggestion.distance / 1000).toFixed(1)}km`}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={[sModal.checkBtn, selected && sModal.checkBtnActive]}>
+                      {selected && <Ionicons name="checkmark" size={16} color="#fff" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              }}
             />
           </View>
         </View>
@@ -439,20 +545,42 @@ export default function ChatListScreen({ navigation }) {
 }
 
 // ════════════════════════════════════════
-// MODAL STYLES
+// MODAL STYLES — Vercel-inspired
 // ════════════════════════════════════════
 const sModal = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
-  container: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, height: "85%" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB", backgroundColor: "#fff" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
+  container: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, height: "88%", overflow: "hidden" },
+  handleBar: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#D1D5DB", alignSelf: "center", marginTop: 8, marginBottom: 4 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  headerBtn: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   title: { fontSize: 17, fontWeight: "700", color: "#111827" },
-  doneBtn: { fontSize: 16, fontWeight: "700", color: colors.primary },
-  body: { flex: 1, padding: 16 },
-  input: { backgroundColor: "#F9FAFB", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", padding: 14, fontSize: 15, color: "#111827", marginBottom: 12 },
-  sectionTitle: { fontSize: 13, fontWeight: "600", color: "#6B7280", marginBottom: 8 },
-  searchInput: { backgroundColor: "#F3F4F6", borderRadius: 10, paddingHorizontal: 12, height: 36, fontSize: 14, color: "#111827", marginBottom: 8 },
-  selectedChip: { flexDirection: "row", alignItems: "center", backgroundColor: "#F0F9FF", borderRadius: 16, paddingHorizontal: 8, paddingVertical: 6, marginRight: 8, borderWidth: 1, borderColor: "#DBEAFE" },
-  userItem: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  doneBtn: { fontSize: 15, fontWeight: "700", color: colors.primary },
+  // Group name
+  nameRow: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginTop: 12, marginBottom: 4, backgroundColor: "#F9FAFB", borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB", paddingHorizontal: 12, height: 44 },
+  nameIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginRight: 10 },
+  nameInput: { flex: 1, fontSize: 15, color: "#111827" },
+  // Selected
+  selectedRow: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  selectedChip: { flexDirection: "row", alignItems: "center", backgroundColor: "#F0F9FF", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: "#DBEAFE", gap: 4 },
+  selectedName: { fontSize: 13, color: "#111827", fontWeight: "500", maxWidth: 80 },
+  // Search
+  searchRow: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginTop: 10, marginBottom: 4, backgroundColor: "#F3F4F6", borderRadius: 10, paddingHorizontal: 12, height: 36 },
+  searchInput: { flex: 1, fontSize: 14, color: "#111827" },
+  // Body
+  body: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
+  sectionTitle: { fontSize: 12, fontWeight: "600", color: "#6B7280", marginBottom: 8, letterSpacing: 0.3 },
+  // Suggested cards
+  suggestedCard: { width: 90, alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, backgroundColor: "#F9FAFB", borderRadius: 14, borderWidth: 0.5, borderColor: "#E5E7EB" },
+  suggestedOnline: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#22C55E", position: "absolute", bottom: 0, right: 0, borderWidth: 2, borderColor: "#fff" },
+  suggestedName: { fontSize: 12, fontWeight: "500", color: "#111827", marginTop: 6, textAlign: "center" },
+  suggestedDist: { fontSize: 10, color: "#22C55E", marginTop: 2 },
+  addBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#D1D5DB", alignItems: "center", justifyContent: "center", marginTop: 6 },
+  addBtnActive: { backgroundColor: colors.primary },
+  // User list
+  userList: { flex: 1 },
+  userItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  checkBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center", marginLeft: 8 },
+  checkBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
 });
 
 const styles = StyleSheet.create({
