@@ -572,15 +572,15 @@ export default function ChatListScreen({ navigation }) {
                 </ScrollView>
               </View>
             )}
-            <View style={sModal.body}>
+            <ScrollView style={sModal.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               {/* Đề xuất gần bạn — chỉ người ở gần */}
               {loadingNearby ? <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} /> : (
                 suggestedNearby.length > 0 ? (
                   <>
                     <Text style={sModal.sectionTitle}><Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn</Text>
-                    <FlatList data={suggestedNearby} keyExtractor={(item) => `nearby-${item.id}`} showsVerticalScrollIndicator={false} style={{ maxHeight: 140 }}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity style={sModal.suggestedUserItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
+                    <View>
+                    {suggestedNearby.slice(0, 8).map(item => (
+                        <TouchableOpacity key={item.id} style={sModal.suggestedUserItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
                           <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
                             {item.avatar ? <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 36, height: 36, borderRadius: 18 }} />
                               : <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
@@ -593,8 +593,8 @@ export default function ChatListScreen({ navigation }) {
                             <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={16} color="#fff" />
                           </View>
                         </TouchableOpacity>
-                      )}
-                    />
+                      ))}
+                    </View>
                   </>
                 ) : (
                   <View style={{ alignItems: "center", paddingVertical: 16 }}>
@@ -604,48 +604,48 @@ export default function ChatListScreen({ navigation }) {
                 )
               )}
 
-              {/* ─── Địa chỉ nhóm — card design ── */}
+              {/* ─── Địa chỉ nhóm — flat form ── */}
               <Text style={[sModal.sectionTitle, { marginTop: 14, marginBottom: 6 }]}><Ionicons name="location" size={12} color="#EF4444" />  Địa chỉ nhóm</Text>
               <View style={addrStyles.card}>
-                {/* Row 1: Tỉnh + Quận (2 cột) */}
+                {/* Hàng 1: Tỉnh + Quận (2 cột) */}
                 <View style={{ flexDirection: "row", gap: 8 }}>
-                  <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }]} onPress={() => setGroupPicker('province')} activeOpacity={0.7}>
+                  <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }]} onPress={() => { setGroupPicker('province'); }} activeOpacity={0.7}>
                     <Text style={[addrStyles.pickerText, !groupProvince && addrStyles.pickerPlaceholder]} numberOfLines={1}>
-                      {groupProvince || 'Tỉnh / TP'}
+                      {groupProvince || 'Tỉnh/TP'}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
                   </TouchableOpacity>
-                  <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }, !groupProvince && addrStyles.pickerDisabled]} onPress={() => groupProvince && setGroupPicker('district')} activeOpacity={0.7}>
+                  <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }, !groupProvince && addrStyles.pickerDisabled]} onPress={() => { if (groupProvince) setGroupPicker('district'); }} activeOpacity={0.7}>
                     <Text style={[addrStyles.pickerText, !groupDistrict && addrStyles.pickerPlaceholder]} numberOfLines={1}>
-                      {groupDistrict || 'Quận / Huyện'}
+                      {groupDistrict || 'Quận/Huyện'}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
                   </TouchableOpacity>
                 </View>
-                {/* Row 2: Phường/Xã (full width) */}
+                {/* Hàng 2: Phường/Xã */}
                 {addressWards.length > 0 ? (
-                  <TouchableOpacity style={[addrStyles.pickerRow, !groupDistrict && addrStyles.pickerDisabled]} onPress={() => groupDistrict && setGroupPicker('ward')} activeOpacity={0.7}>
+                  <TouchableOpacity style={[addrStyles.pickerRow, !groupDistrict && addrStyles.pickerDisabled]} onPress={() => { if (groupDistrict) setGroupPicker('ward'); }} activeOpacity={0.7}>
                     <Text style={[addrStyles.pickerText, !groupWard && addrStyles.pickerPlaceholder]} numberOfLines={1}>
-                      {groupWard || (groupDistrict ? 'Phường / Xã' : 'Chọn quận/huyện trước')}
+                      {groupWard || (groupDistrict ? 'Phường/Xã' : '...')}
                     </Text>
                     <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
                   </TouchableOpacity>
                 ) : (
-                  <TextInput style={addrStyles.input} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} editable={!!groupDistrict} />
+                  <TextInput style={addrStyles.borderedInput} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} editable={!!groupDistrict} />
                 )}
-                {/* Row 3: Địa chỉ chi tiết — LUÔN HIỂN THỊ */}
+                {/* Hàng 3: Địa chỉ chi tiết (luôn hiển thị) */}
                 <View style={addrStyles.detailRow}>
                   <Ionicons name="home-outline" size={16} color="#EF4444" style={{ marginRight: 8 }} />
                   <TextInput
                     style={addrStyles.input}
-                    placeholder="Tòa nhà, địa chỉ chi tiết hoặc số trên đường"
+                    placeholder="Tòa nhà, số nhà, đường"
                     placeholderTextColor="#9CA3AF"
                     value={groupStreet}
                     onChangeText={setGroupStreet}
                   />
                 </View>
               </View>
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -725,9 +725,8 @@ const sModal = StyleSheet.create({
   // ─── Address field styles (Group create) ──
   const addrStyles = StyleSheet.create({
   card: {
-    backgroundColor: "#fff", borderRadius: 14,
-    borderWidth: 1, borderColor: "#E5E7EB",
-    paddingHorizontal: 14, paddingVertical: 12, gap: 10,
+    backgroundColor: "#fff",
+    paddingHorizontal: 0, paddingVertical: 0, gap: 10,
     marginBottom: 16,
   },
   pickerRow: {
@@ -739,16 +738,22 @@ const sModal = StyleSheet.create({
   pickerDisabled: { opacity: 0.45 },
   pickerText: { flex: 1, fontSize: 14, color: "#111827" },
   pickerPlaceholder: { color: "#9CA3AF" },
-  input: {
+  borderedInput: {
     backgroundColor: "#F9FAFB", borderRadius: 10,
     borderWidth: 1, borderColor: "#E5E7EB",
     paddingHorizontal: 12, height: 40, fontSize: 14, color: "#111827",
+  },
+  input: {
+    flex: 1,
+    backgroundColor: "transparent",
+    height: 42, fontSize: 14, color: "#111827",
+    paddingVertical: 0, paddingHorizontal: 0,
   },
   detailRow: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: "#FFF7ED", borderRadius: 10,
     borderWidth: 1, borderColor: "#FED7AA",
-    paddingHorizontal: 12, height: 44,
+    paddingHorizontal: 12, height: 44, overflow: "hidden",
   },
 });
 
