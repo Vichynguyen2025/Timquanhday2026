@@ -15,6 +15,77 @@ import { vi } from "date-fns/locale";
 const API_BASE = "https://timquanhday.de";
 const GROUP_RADII = [100, 200, 500];
 
+// ─── Vietnam provinces (same list as EditProfile) ──
+const VIETNAM_PROVINCES = [
+  'An Giang', 'Bà Rịa - Vũng Tàu', 'Bạc Liêu', 'Bắc Giang', 'Bắc Kạn',
+  'Bắc Ninh', 'Bến Tre', 'Bình Dương', 'Bình Định', 'Bình Phước',
+  'Bình Thuận', 'Cà Mau', 'Cao Bằng', 'Cần Thơ', 'Đà Nẵng',
+  'Đắk Lắk', 'Đắk Nông', 'Điện Biên', 'Đồng Nai', 'Đồng Tháp',
+  'Gia Lai', 'Hà Giang', 'Hà Nam', 'Hà Nội', 'Hà Tĩnh',
+  'Hải Dương', 'Hải Phòng', 'Hậu Giang', 'Hòa Bình', 'TP. Hồ Chí Minh',
+  'Hưng Yên', 'Khánh Hòa', 'Kiên Giang', 'Kon Tum', 'Lai Châu',
+  'Lạng Sơn', 'Lào Cai', 'Lâm Đồng', 'Long An', 'Nam Định',
+  'Nghệ An', 'Ninh Bình', 'Ninh Thuận', 'Phú Thọ', 'Phú Yên',
+  'Quảng Bình', 'Quảng Nam', 'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị',
+  'Sóc Trăng', 'Sơn La', 'Tây Ninh', 'Thái Bình', 'Thái Nguyên',
+  'Thanh Hóa', 'Thừa Thiên Huế', 'Tiền Giang', 'Trà Vinh', 'Tuyên Quang',
+  'Vĩnh Long', 'Vĩnh Phúc', 'Yên Bái',
+];
+
+const GROUP_DISTRICTS = [
+  'Quận 1', 'Quận 2', 'Quận 3', 'Quận 4', 'Quận 5', 'Quận 6',
+  'Quận 7', 'Quận 8', 'Quận 9', 'Quận 10', 'Quận 11', 'Quận 12',
+  'Bình Tân', 'Bình Thạnh', 'Gò Vấp', 'Phú Nhuận', 'Tân Bình',
+  'Tân Phú', 'Thủ Đức', 'Củ Chi', 'Hóc Môn', 'Bình Chánh',
+  'Nhà Bè', 'Cần Giờ',
+];
+
+// ─── Address Picker Modal (table list, like EditProfile) ──
+function AddressPickerModal({ visible, title, data, value, onSelect, onClose }) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={pickerStyles.overlay}>
+        <View style={pickerStyles.container}>
+          <View style={pickerStyles.header}>
+            <Text style={pickerStyles.title}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+              <Ionicons name="close" size={24} color="#111827" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={data}
+            keyExtractor={(_, i) => String(i)}
+            contentContainerStyle={{ paddingBottom: 24 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[pickerStyles.item, value === item && pickerStyles.itemActive]}
+                onPress={() => { onSelect(item); onClose(); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[pickerStyles.itemText, value === item && pickerStyles.itemTextActive]}>
+                  {item}
+                </Text>
+                {value === item ? <Ionicons name="checkmark" size={20} color="#2563EB" /> : null}
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pickerStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  container: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "75%", paddingBottom: 12 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
+  title: { fontSize: 17, fontWeight: "700", color: "#111827" },
+  item: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 14, paddingHorizontal: 20, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  itemActive: { backgroundColor: "#EFF6FF" },
+  itemText: { fontSize: 15, color: "#374151" },
+  itemTextActive: { color: "#2563EB", fontWeight: "600" },
+});
+
 export default function ChatListScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { onlineUsers } = useSocket();
@@ -47,6 +118,7 @@ export default function ChatListScreen({ navigation }) {
   const [groupDistrict, setGroupDistrict] = useState("");
   const [groupProvince, setGroupProvince] = useState("");
   const [groupStreet, setGroupStreet] = useState("");
+  const [groupPicker, setGroupPicker] = useState(null); // 'province' | 'district'
 
   // ─── Suggested groups ────────────────────
   const [nearbyGroups, setNearbyGroups] = useState([]);
@@ -553,15 +625,55 @@ export default function ChatListScreen({ navigation }) {
               {/* ─── Địa chỉ nhóm (hiển thị trong Đề xuất) ── */}
               <Text style={[sModal.sectionTitle, { marginTop: 12 }]}><Ionicons name="location" size={12} color="#EF4444" />  Địa chỉ nhóm</Text>
               <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
-                <TextInput style={sModal.nameInput} placeholder="Số nhà, tên đường" placeholderTextColor="#9CA3AF" value={groupStreet} onChangeText={setGroupStreet} />
-                <TextInput style={sModal.nameInput} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} />
-                <TextInput style={sModal.nameInput} placeholder="Quận / Huyện" placeholderTextColor="#9CA3AF" value={groupDistrict} onChangeText={setGroupDistrict} />
-                <TextInput style={sModal.nameInput} placeholder="Tỉnh / Thành phố" placeholderTextColor="#9CA3AF" value={groupProvince} onChangeText={setGroupProvince} />
+                {/* Tỉnh / Thành phố — picker */}
+                <TouchableOpacity style={addrStyles.pickerRow} onPress={() => setGroupPicker('province')} activeOpacity={0.7}>
+                  <Ionicons name="map-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
+                  <Text style={[addrStyles.pickerText, !groupProvince && addrStyles.pickerPlaceholder]}>
+                    {groupProvince || 'Chọn Tỉnh / Thành phố'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+                {/* Quận / Huyện — picker */}
+                <TouchableOpacity style={addrStyles.pickerRow} onPress={() => setGroupPicker('district')} activeOpacity={0.7}>
+                  <Ionicons name="location-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
+                  <Text style={[addrStyles.pickerText, !groupDistrict && addrStyles.pickerPlaceholder]}>
+                    {groupDistrict || 'Chọn Quận / Huyện'}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+                {/* Phường / Xã — text input */}
+                <View style={addrStyles.inputRow}>
+                  <Ionicons name="business-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
+                  <TextInput style={addrStyles.input} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} />
+                </View>
+                {/* Số nhà, tên đường — text input */}
+                <View style={addrStyles.inputRow}>
+                  <Ionicons name="home-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
+                  <TextInput style={addrStyles.input} placeholder="Tòa nhà, địa chỉ chi tiết hoặc số trên đường" placeholderTextColor="#9CA3AF" value={groupStreet} onChangeText={setGroupStreet} />
+                </View>
               </View>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* ─── Address Picker Modals (province/district) ── */}
+      <AddressPickerModal
+        visible={groupPicker === 'province'}
+        title="Chọn Tỉnh / Thành phố"
+        data={VIETNAM_PROVINCES}
+        value={groupProvince}
+        onSelect={setGroupProvince}
+        onClose={() => setGroupPicker(null)}
+      />
+      <AddressPickerModal
+        visible={groupPicker === 'district'}
+        title="Chọn Quận / Huyện"
+        data={GROUP_DISTRICTS}
+        value={groupDistrict}
+        onSelect={setGroupDistrict}
+        onClose={() => setGroupPicker(null)}
+      />
       
     </View>
   );
@@ -603,11 +715,29 @@ const sModal = StyleSheet.create({
   suggestedUserItem: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
   addBtnSm: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
   // User list
-  userList: { flex: 1 },
-  userItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
-  checkBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center", marginLeft: 8 },
-  checkBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-});
+    userList: { flex: 1 },
+    userItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6
+    checkBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: "#D1D5DB", alignItems: "center", justifyConten
+    checkBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    // Address fields
+  });
+
+  // ─── Address field styles (Group create) ──
+  const addrStyles = StyleSheet.create({
+    pickerRow: {
+      flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB",
+      borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB",
+      paddingHorizontal: 12, height: 44,
+    },
+    pickerText: { flex: 1, fontSize: 14, color: "#111827" },
+    pickerPlaceholder: { color: "#9CA3AF" },
+    inputRow: {
+      flexDirection: "row", alignItems: "center", backgroundColor: "#F9FAFB",
+      borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB",
+      paddingHorizontal: 12, height: 44,
+    },
+    input: { flex: 1, fontSize: 14, color: "#111827" },
+  });
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FAFBFC" },
