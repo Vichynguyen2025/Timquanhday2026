@@ -40,9 +40,13 @@ export default function ChatListScreen({ navigation }) {
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupMembers, setGroupMembers] = useState([]);
-  const [allUsers, setAllUsers] = useState([]);
-  const [userSearch, setUserSearch] = useState("");
   const [creating, setCreating] = useState(false);
+
+  // Group address (displayed in Đề xuất)
+  const [groupWard, setGroupWard] = useState("");
+  const [groupDistrict, setGroupDistrict] = useState("");
+  const [groupProvince, setGroupProvince] = useState("");
+  const [groupStreet, setGroupStreet] = useState("");
 
   // ─── Suggested groups ────────────────────
   const [nearbyGroups, setNearbyGroups] = useState([]);
@@ -177,21 +181,20 @@ export default function ChatListScreen({ navigation }) {
   // �════════════════════════════════════════
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [loadingNearby, setLoadingNearby] = useState(false);
-  const [groupUserSearch, setGroupUserSearch] = useState("");
+  const groupUserSearch = ""; // removed — show only nearby suggestions
 
   async function openCreateGroup() {
     setGroupName("");
     setGroupMembers([]);
-    setGroupUserSearch("");
+    setGroupStreet("");
+    setGroupWard("");
+    setGroupDistrict("");
+    setGroupProvince("");
     setShowCreateGroup(true);
     setLoadingNearby(true);
     try {
-      const [userRes, nearbyRes] = await Promise.allSettled([
-        api.get("/users/search", { params: { q: "" } }),
-        api.get("/location/nearby", { params: { radius: 500 } }),
-      ]);
-      if (userRes.status === "fulfilled") setAllUsers(userRes.value.data || []);
-      if (nearbyRes.status === "fulfilled") setNearbyUsers(nearbyRes.value.data?.users || []);
+      const nearbyRes = await api.get("/location/nearby", { params: { radius: 500 } });
+      if (nearbyRes.data?.users) setNearbyUsers(nearbyRes.data.users);
     } catch {}
     setLoadingNearby(false);
   }
@@ -220,6 +223,10 @@ export default function ChatListScreen({ navigation }) {
         name: groupName.trim(),
         memberIds,
         lat, lng,
+        ward: groupWard.trim() || null,
+        district: groupDistrict.trim() || null,
+        province: groupProvince.trim() || null,
+        street: groupStreet.trim() || null,
       });
       if (res.data?.id) {
         setShowCreateGroup(false);
@@ -242,11 +249,6 @@ export default function ChatListScreen({ navigation }) {
   useFocusEffect(useCallback(() => {
     if (tab === "suggested") fetchNearbyGroups();
   }, [tab, groupRadius]));
-
-  const filteredUsers = allUsers.filter(u =>
-    u.id !== currentUserId && !groupMembers.find(m => m.id === u.id) &&
-    (u.name || "").toLowerCase().includes(groupUserSearch.toLowerCase())
-  );
 
   const suggestedNearby = nearbyUsers.filter(u =>
     u.id !== currentUserId && !groupMembers.find(m => m.id === u.id)
@@ -516,17 +518,13 @@ export default function ChatListScreen({ navigation }) {
                 </ScrollView>
               </View>
             )}
-            <View style={sModal.searchRow}>
-              <Ionicons name="search" size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
-              <TextInput style={sModal.searchInput} placeholder="Tìm kiếm người dùng..." placeholderTextColor="#9CA3AF" value={groupUserSearch} onChangeText={setGroupUserSearch} />
-              {groupUserSearch.length > 0 && <TouchableOpacity onPress={() => setGroupUserSearch("")}><Ionicons name="close-circle" size={16} color="#9CA3AF" /></TouchableOpacity>}
-            </View>
             <View style={sModal.body}>
-              {!groupUserSearch && suggestedNearby.length > 0 && (
-                <>
-                  <Text style={sModal.sectionTitle}><Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn</Text>
-                  {loadingNearby ? <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} /> : (
-                    <FlatList data={suggestedNearby} keyExtractor={(item) => `nearby-${item.id}`} showsVerticalScrollIndicator={false} style={{ maxHeight: 190 }}
+              {/* Đề xuất gần bạn — chỉ người ở gần */}
+              {loadingNearby ? <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} /> : (
+                suggestedNearby.length > 0 ? (
+                  <>
+                    <Text style={sModal.sectionTitle}><Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn</Text>
+                    <FlatList data={suggestedNearby} keyExtractor={(item) => `nearby-${item.id}`} showsVerticalScrollIndicator={false} style={{ maxHeight: 160 }}
                       renderItem={({ item }) => (
                         <TouchableOpacity style={sModal.suggestedUserItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
                           <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
@@ -535,7 +533,7 @@ export default function ChatListScreen({ navigation }) {
                           </View>
                           <View style={{ flex: 1, marginLeft: 10 }}>
                             <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
-                            <Text style={{ fontSize: 11, color: "#22C55E" }}>{item.distance ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : ""}</Text>
+                            {item.distance != null && <Text style={{ fontSize: 11, color: "#22C55E" }}>{item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`}</Text>}
                           </View>
                           <View style={[sModal.addBtnSm, groupMembers.find(m => m.id === item.id) && sModal.addBtnActive]}>
                             <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={16} color="#fff" />
@@ -543,30 +541,23 @@ export default function ChatListScreen({ navigation }) {
                         </TouchableOpacity>
                       )}
                     />
-                  )}
-                </>
+                  </>
+                ) : (
+                  <View style={{ alignItems: "center", paddingVertical: 20 }}>
+                    <Ionicons name="people-outline" size={28} color="#D1D5DB" />
+                    <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6 }}>Không có người dùng gần đây</Text>
+                  </View>
+                )
               )}
-              <Text style={sModal.sectionTitle}><Ionicons name="people" size={12} color="#6B7280" />  Tất cả người dùng</Text>
-              <FlatList data={filteredUsers} keyExtractor={(item) => item.id} style={sModal.userList} showsVerticalScrollIndicator={false}
-                ListEmptyComponent={<View style={{ alignItems: "center", paddingTop: 24 }}><Ionicons name="search-outline" size={32} color="#D1D5DB" /><Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 8 }}>Không tìm thấy người dùng</Text></View>}
-                renderItem={({ item }) => {
-                  const selected = !!groupMembers.find(m => m.id === item.id);
-                  const nearbySuggestion = suggestedNearby.find(s => s.id === item.id);
-                  return (
-                    <TouchableOpacity style={sModal.userItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
-                      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                        {item.avatar ? <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 40, height: 40, borderRadius: 20 }} />
-                          : <Text style={{ fontSize: 16, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
-                      </View>
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
-                        {nearbySuggestion?.distance != null && <Text style={{ fontSize: 11, color: "#22C55E" }}>🧭 {nearbySuggestion.distance < 1000 ? `${nearbySuggestion.distance}m` : `${(nearbySuggestion.distance / 1000).toFixed(1)}km`}</Text>}
-                      </View>
-                      <View style={[sModal.checkBtn, selected && sModal.checkBtnActive]}>{selected && <Ionicons name="checkmark" size={16} color="#fff" />}</View>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
+
+              {/* ─── Địa chỉ nhóm (hiển thị trong Đề xuất) ── */}
+              <Text style={[sModal.sectionTitle, { marginTop: 12 }]}><Ionicons name="location" size={12} color="#EF4444" />  Địa chỉ nhóm</Text>
+              <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
+                <TextInput style={sModal.nameInput} placeholder="Số nhà, tên đường" placeholderTextColor="#9CA3AF" value={groupStreet} onChangeText={setGroupStreet} />
+                <TextInput style={sModal.nameInput} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} />
+                <TextInput style={sModal.nameInput} placeholder="Quận / Huyện" placeholderTextColor="#9CA3AF" value={groupDistrict} onChangeText={setGroupDistrict} />
+                <TextInput style={sModal.nameInput} placeholder="Tỉnh / Thành phố" placeholderTextColor="#9CA3AF" value={groupProvince} onChangeText={setGroupProvince} />
+              </View>
             </View>
           </View>
         </View>

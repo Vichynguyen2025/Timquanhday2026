@@ -95,7 +95,7 @@ router.post('/', authenticate, async (req, res) => {
 // ─── Create group chat ─────────────────────
 router.post('/group', authenticate, async (req, res) => {
   try {
-    const { name, memberIds, lat, lng } = req.body;
+    const { name, memberIds, lat, lng, ward, district, province, street } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ error: 'Group name required' });
     if (!memberIds || !Array.isArray(memberIds) || memberIds.length < 2) {
       return res.status(400).json({ error: 'At least 2 other members required' });
@@ -105,8 +105,8 @@ router.post('/group', authenticate, async (req, res) => {
     const convId = crypto.randomUUID();
 
     await query(
-      'INSERT INTO conversations (id, type, name, lat, lng) VALUES (?, ?, ?, ?, ?)',
-      [convId, 'group', name.trim(), lat || null, lng || null]
+      'INSERT INTO conversations (id, type, name, lat, lng, ward, district, province, street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [convId, 'group', name.trim(), lat || null, lng || null, ward || null, district || null, province || null, street || null]
     );
 
     const values = allIds.map(uid => `('${convId}', '${uid}')`).join(', ');
@@ -144,7 +144,8 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
 
     // Find groups where user is either NOT a member OR is a member (but didn't soft-delete)
     const candidateGroups = await query(`
-      SELECT DISTINCT c.id, c.name, c.type, c.lat as group_lat, c.lng as group_lng, c.created_at,
+      SELECT DISTINCT c.id, c.name, c.type, c.lat as group_lat, c.lng as group_lng,
+        c.ward, c.district, c.province, c.street, c.created_at,
         (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at
       FROM conversations c
@@ -193,12 +194,14 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
   }
 });
 
-// ─── Update conversation (name, avatar) ────────
+// ─── Update conversation (name, avatar, address) ──
 router.patch('/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, avatar } = req.body;
-    if (!name && !avatar) return res.status(400).json({ error: 'Nothing to update' });
+    const { name, avatar, ward, district, province, street, lat, lng } = req.body;
+    if (!name && !avatar && !ward && !district && !province && !street && !lat && !lng) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
 
     // Check membership
     const member = await queryOne('SELECT * FROM conversation_members WHERE conversation_id = ? AND user_id = ?', [id, req.user.id]);
@@ -208,16 +211,24 @@ router.patch('/:id', authenticate, async (req, res) => {
     const values = [];
     if (name !== undefined) { updates.push('name = ?'); values.push(name); }
     if (avatar !== undefined) { updates.push('avatar = ?'); values.push(avatar); }
+    if (ward !== undefined) { updates.push('ward = ?'); values.push(ward); }
+    if (district !== undefined) { updates.push('district = ?'); values.push(district); }
+    if (province !== undefined) { updates.push('province = ?'); values.push(province); }
+    if (street !== undefined) { updates.push('street = ?'); values.push(street); }
+    if (lat !== undefined) { updates.push('lat = ?'); values.push(lat); }
+    if (lng !== undefined) { updates.push('lng = ?'); values.push(lng); }
     values.push(id);
     await query(`UPDATE conversations SET ${updates.join(', ')} WHERE id = ?`, values);
 
     // Broadcast update to conversation room
     if (req.app?.get('io')) {
       const io = req.app.get('io');
-      io.to(`conversation:${id}`).emit('conversation:updated', { conversationId: id, name, avatar });
+      io.to(`conversation:${id}`).emit('conversation:updated', {
+        conversationId: id, name, avatar, ward, district, province, street, lat, lng
+      });
     }
 
-    res.json({ success: true, conversationId: id, name, avatar });
+    res.json({ success: true, conversationId: id, name, avatar, ward, district, province, street, lat, lng });
   } catch (err) {
     console.error('[Conv] Update error:', err);
     res.status(500).json({ error: 'Internal server error' });
