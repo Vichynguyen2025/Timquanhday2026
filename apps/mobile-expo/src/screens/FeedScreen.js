@@ -44,9 +44,10 @@ function formatDistance(km) {
   return `${Math.round(km)} km`;
 }
 
-// ─── Recursive Comment Node (tree with connector lines) ──
-function CommentNode({ comment, depth, flat, onReply, onDelete, formatTime }) {
-  const children = flat.filter(c => c.parent_id === comment.id);
+// ─── Comment Row (single row renderer) ─────────────
+// Only 2 visual levels: root (depth 0) and reply (depth 1).
+// All replies — regardless of actual DB hierarchy depth — align at depth 1.
+function CommentRow({ comment, depth, flat, onReply, onDelete, formatTime }) {
   const indent = depth > 0 ? 16 : 0;
   const avatarSize = depth === 0 ? 32 : 28;
   const fontSize = depth === 0 ? 15 : 14;
@@ -55,16 +56,26 @@ function CommentNode({ comment, depth, flat, onReply, onDelete, formatTime }) {
 
   let parentName = null;
   if (comment.parent_id) {
-    const parent = flat.find(c => c.id === comment.parent_id);
-    parentName = parent?.user_name;
+    // Search up the chain for the nearest parent that EXISTS in the list
+    // (so reply-to-reply still shows "@original author" not the missing intermediate)
+    let cur = comment;
+    let guard = 0;
+    let found = null;
+    while (cur?.parent_id && guard < 10) {
+      const p = flat.find(c => c.id === cur.parent_id);
+      if (!p) break;
+      if (p.parent_id == null) { found = p; break; }
+      cur = p;
+      guard++;
+    }
+    parentName = found?.user_name || flat.find(c => c.id === comment.parent_id)?.user_name;
   }
 
   return (
     <View style={{ marginBottom: depth === 0 ? 12 : 4 }}>
       <View style={{ flexDirection: "row", gap: 8, marginLeft: indent }}>
-        {/* Connector line for nested replies */}
         {depth > 0 ? (
-          <View style={{ position: "absolute", left: -8, top: 0, bottom: children.length > 0 ? -4 : 20, width: 2, backgroundColor: "#E5E7EB" }} />
+          <View style={{ position: "absolute", left: -8, top: 0, bottom: 20, width: 2, backgroundColor: "#E5E7EB" }} />
         ) : null}
         <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}>
           {comment.user_avatar ? (
@@ -77,7 +88,7 @@ function CommentNode({ comment, depth, flat, onReply, onDelete, formatTime }) {
           <View style={[styles.commentBubble, { padding: bubblePad }]}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
               <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{comment.user_name || "Người dùng"}</Text>
-              {parentName && <Text style={styles.commentReplyTo}> → {parentName}</Text>}
+              {parentName ? <Text style={styles.commentReplyTo}> → {parentName}</Text> : null}
               <Text style={styles.commentTime}>{formatTime(comment.created_at)}</Text>
             </View>
             <Text style={[styles.commentContent, { fontSize }]}>{comment.content}</Text>
@@ -89,26 +100,48 @@ function CommentNode({ comment, depth, flat, onReply, onDelete, formatTime }) {
             <TouchableOpacity onPress={() => onReply(comment)}>
               <Text style={styles.commentActionText}>Trả lời</Text>
             </TouchableOpacity>
-            {isMine && (
+            {isMine ? (
               <>
                 <Text style={styles.commentActionSep}>·</Text>
                 <TouchableOpacity onPress={() => onDelete(comment.id)}>
                   <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
                 </TouchableOpacity>
               </>
-            )}
+            ) : null}
           </View>
-
-          {/* Children rendered recursively — nested inside parent */}
-          {children.length > 0 && (
-            <View style={{ marginTop: 4 }}>
-              {children.map(child => (
-                <CommentNode key={child.id} comment={child} depth={depth + 1} flat={flat} onReply={onReply} onDelete={onDelete} formatTime={formatTime} />
-              ))}
-            </View>
-          )}
         </View>
       </View>
+    </View>
+  );
+}
+
+// ─── Determine if a comment is a descendant of rootId (any depth) ──
+function isDescendantOf(comment, rootId, flat) {
+  let pid = comment?.parent_id;
+  let guard = 0;
+  while (pid && guard < 15) {
+    if (pid === rootId) return true;
+    const parent = flat.find(c => c.id === pid);
+    if (!parent) return false;
+    pid = parent.parent_id;
+    guard++;
+  }
+  return false;
+}
+
+// ─── Comment Thread (root + all its replies flattened at depth 1) ──
+function CommentThread({ root, flat, onReply, onDelete, formatTime }) {
+  // All replies of this thread regardless of DB depth → rendered FLAT at depth 1
+  const replies = flat
+    .filter(c => c.parent_id != null && isDescendantOf(c, root.id, flat))
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  return (
+    <View>
+      <CommentRow comment={root} depth={0} flat={flat} onReply={onReply} onDelete={onDelete} formatTime={formatTime} />
+      {replies.map(r => (
+        <CommentRow key={r.id} comment={r} depth={1} flat={flat} onReply={onReply} onDelete={onDelete} formatTime={formatTime} />
+      ))}
     </View>
   );
 }
@@ -647,9 +680,8 @@ export default function FeedScreen({ navigation }) {
                   </View>
                 }
                 renderItem={({ item }) => (
-                  <CommentNode
-                    comment={item}
-                    depth={0}
+                  <CommentThread
+                    root={item}
                     flat={comments}
                     formatTime={formatTime}
                     onReply={(c) => { setReplyTo({ id: c.id, name: c.user_name || "Người dùng" }); if (commentInputRef.current) commentInputRef.current.focus(); }}
