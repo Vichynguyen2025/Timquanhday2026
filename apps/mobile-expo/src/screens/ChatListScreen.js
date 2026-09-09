@@ -25,6 +25,11 @@ export default function ChatListScreen({ navigation }) {
   // ─── Tab state ───────────────────────────
   const [tab, setTab] = useState("chats");
 
+  // Reset tab to chats on focus (handles back navigation from Explore)
+  useFocusEffect(useCallback(() => {
+    if (tab === "explore") setTab("chats");
+  }, [tab]));
+
   // ─── Chats tab (EXISTING — untouched) ────
   const [conversations, setConversations] = useState([]);
   const [blockedConversations, setBlockedConversations] = useState(new Set());
@@ -203,9 +208,18 @@ export default function ChatListScreen({ navigation }) {
     setCreating(true);
     try {
       const memberIds = groupMembers.map(m => m.id);
+      // Get current location for group proximity
+      let lat, lng;
+      try {
+        const loc = await api.get("/location/me");
+        if (loc.data?.lat && loc.data?.lng) { lat = loc.data.lat; lng = loc.data.lng; }
+      } catch (e) {
+        // Location unavailable — group still created without coordinates
+      }
       const res = await api.post("/conversations/group", {
         name: groupName.trim(),
         memberIds,
+        lat, lng,
       });
       if (res.data?.id) {
         setShowCreateGroup(false);

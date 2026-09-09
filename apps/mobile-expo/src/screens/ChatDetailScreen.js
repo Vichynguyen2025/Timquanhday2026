@@ -143,6 +143,12 @@ export default function ChatDetailScreen({ route, navigation }) {
       socket.on("message:new", onMsg); socket.on("message:deleted", onDel);
       socket.on("message:reaction", onReact); socket.on("user:typing", onType);
       socket.on("user:stop-typing", onStop);
+      socket.on("conversation:updated", ({ conversationId: cId, name, avatar }) => {
+        if (cId === conversationId) {
+          setConvInfo(prev => prev ? { ...prev, name: name || prev.name, avatar: avatar || prev.avatar } : prev);
+          if (name) navigation.setParams({ name });
+        }
+      });
       return () => {
         // Clear active conversation for badge tracking
         setActiveConversation(null);
@@ -151,6 +157,7 @@ export default function ChatDetailScreen({ route, navigation }) {
         socket.off("message:new", onMsg); socket.off("message:deleted", onDel);
         socket.off("message:reaction", onReact); socket.off("user:typing", onType);
         socket.off("user:stop-typing", onStop);
+        socket.off("conversation:updated");
         socket.emit("conversation:leave", { conversationId });
       };
     }
@@ -957,6 +964,7 @@ export default function ChatDetailScreen({ route, navigation }) {
 
       {/* ─── Nickname Edit Modal ──── */}
       <Modal visible={showNickname} transparent animationType="slide" onRequestClose={() => { setShowNickname(false); setShowInfoModal(true); }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => { setShowNickname(false); setShowInfoModal(true); }}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
@@ -995,10 +1003,12 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           </View>
         </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ─── Group Rename Modal ──── */}
       <Modal visible={showGroupRename} transparent animationType="slide" onRequestClose={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
@@ -1030,6 +1040,7 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           </View>
         </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ─── Image Viewer ──── */}

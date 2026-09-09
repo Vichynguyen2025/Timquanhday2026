@@ -64,4 +64,15 @@ router.get('/nearby', authenticate, async (req, res) => {
   }
 });
 
+// Get my current location
+router.get('/me', authenticate, async (req, res) => {
+  try {
+    const loc = await query('SELECT lat, lng, accuracy, updated_at FROM user_locations WHERE user_id = ?', [req.user.id]);
+    if (!loc.length) return res.json({ lat: null, lng: null });
+    res.json({ lat: loc[0].lat, lng: loc[0].lng, accuracy: loc[0].accuracy, updated_at: loc[0].updated_at });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

@@ -127,7 +127,7 @@ router.post('/group', authenticate, async (req, res) => {
   }
 });
 
-// ─── Get nearby groups (by member proximity) ──
+// ─── Get nearby groups (by group location or member proximity) ──
 router.get('/nearby-groups', authenticate, async (req, res) => {
   try {
     const radius = parseInt(req.query.radius || '500');
@@ -142,45 +142,41 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
 
     const { haversineDistance } = require('../utils/helpers.js');
 
-    // Find groups where at least one member (not the current user) is within radius
-    const groups = await query(`
-      SELECT DISTINCT c.id, c.name, c.type, c.lat, c.lng, c.created_at,
+    // Find groups where user is either NOT a member OR is a member (but didn't soft-delete)
+    const candidateGroups = await query(`
+      SELECT DISTINCT c.id, c.name, c.type, c.lat as group_lat, c.lng as group_lng, c.created_at,
         (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at
       FROM conversations c
-      JOIN conversation_members cm ON c.id = cm.conversation_id AND cm.user_id != ? AND cm.deleted_at IS NULL
-      JOIN user_locations ul ON ul.user_id = cm.user_id AND ul.lat IS NOT NULL
       WHERE c.type = 'group'
       AND c.id NOT IN (
         SELECT cm2.conversation_id FROM conversation_members cm2 WHERE cm2.user_id = ? AND cm2.deleted_at IS NOT NULL
-      )`, [req.user.id, req.user.id]
+      )`, [req.user.id]
     );
 
-    // Calculate distance and filter
     const result = [];
-    for (const g of groups) {
-      // For groups with their own lat/lng, use that
-      if (g.lat && g.lng) {
-        const dist = haversineDistance(userLoc.lat, userLoc.lng, g.lat, g.lng) * 1000;
-        if (dist <= radius) {
-          result.push({ ...g, distance: Math.round(dist) });
-        }
-        continue;
+    for (const g of candidateGroups) {
+      let minDist = Infinity;
+
+      // Try group's own lat/lng first
+      if (g.group_lat && g.group_lng) {
+        minDist = haversineDistance(userLoc.lat, userLoc.lng, g.group_lat, g.group_lng) * 1000;
       }
-      // Otherwise calculate from nearest member
+
+      // Also check nearest member location
       const memberLocs = await query(`
         SELECT ul.lat, ul.lng
         FROM conversation_members cm
         JOIN user_locations ul ON ul.user_id = cm.user_id
         WHERE cm.conversation_id = ? AND cm.user_id != ? AND ul.lat IS NOT NULL
       `, [g.id, req.user.id]);
-      let minDist = Infinity;
+
       for (const ml of memberLocs) {
         const dist = haversineDistance(userLoc.lat, userLoc.lng, ml.lat, ml.lng) * 1000;
         if (dist < minDist) minDist = dist;
       }
+
       if (minDist <= radius) {
-        // Get member details
         const members = await query(`
           SELECT u.id, u.name, u.avatar FROM conversation_members cm
           JOIN users u ON u.id = cm.user_id
