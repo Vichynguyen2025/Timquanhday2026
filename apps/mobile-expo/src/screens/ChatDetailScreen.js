@@ -521,7 +521,18 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           )}
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 6 }}>
-            {!isMine && !isImage && <View style={styles.msgAvatar}>{otherUser?.avatar ? <Image source={{ uri: otherUser.avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} /> : <Text style={styles.msgAvatarText}>{(otherUser?.name || "?")[0].toUpperCase()}</Text>}</View>}
+            {!isMine && (isGroup || !isImage) && <View style={{ alignItems: "center" }}>
+                <View style={styles.msgAvatar}>
+                  {isGroup && item.sender_avatar ? (
+                    <Image source={{ uri: item.sender_avatar.startsWith("http") ? item.sender_avatar : "https://timquanhday.de/uploads/" + item.sender_avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} />
+                  ) : !isGroup && otherUser?.avatar ? (
+                    <Image source={{ uri: otherUser.avatar }} style={{ width: 24, height: 24, borderRadius: 12 }} />
+                  ) : (
+                    <Text style={styles.msgAvatarText}>{(isGroup ? (item.sender_name || "?") : (otherUser?.name || "?"))[0].toUpperCase()}</Text>
+                  )}
+                </View>
+                {isGroup && <Text style={styles.msgSenderLabel} numberOfLines={1}>{item.sender_name || "?"}</Text>}
+              </View>}
             <View style={{ maxWidth: isImage ? "80%" : "82%" }}>
               {item.is_deleted ? (
                 <Text style={[styles.deletedText, isMine && { textAlign: "right" }]}>{item.content}</Text>
@@ -574,7 +585,11 @@ export default function ChatDetailScreen({ route, navigation }) {
                       <Text style={[styles.fileText, isMine && { color: "#fff" }]} numberOfLines={1}>{item.content || "File"}</Text>
                     </View>
                   ) : (
-                    <Text style={[styles.msgText, isMine && { color: "#fff" }]}>{item.content}</Text>
+                    {/* Show sender name for group text messages */}
+                    <View>
+                      {isGroup && !isMine && <Text style={styles.msgGroupSender}>{item.sender_name || "?"}</Text>}
+                      <Text style={[styles.msgText, isMine && { color: "#fff" }, isGroup && !isMine && { marginTop: 2 }]}>{item.content}</Text>
+                    </View>
                   )}
                   {/* Timestamp + status (only for single images; not shown inside album) */}
                   <View style={[styles.timeRow, isMine ? { justifyContent: "flex-end" } : { justifyContent: "flex-start" }]}>
@@ -1093,6 +1108,8 @@ const styles = StyleSheet.create({
   bubbleMine: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
   bubbleOther: { backgroundColor: "#F0F2F5", borderBottomLeftRadius: 4 },
   msgText: { fontSize: 15, color: "#000", lineHeight: 20 },
+  msgSenderLabel: { fontSize: 9, color: "#6B7280", marginTop: 2, textAlign: "center", maxWidth: 28 },
+  msgGroupSender: { fontSize: 12, fontWeight: "600", color: colors.primary, marginBottom: 2 },
   deletedText: { fontSize: 13, fontStyle: "italic", color: "#65676B", paddingVertical: 4 },
   inlineReply: { borderLeftWidth: 2, borderLeftColor: colors.primary, paddingLeft: 8, marginBottom: 4 },
   inlineReplyText: { fontSize: 12, color: "#65676B" },
