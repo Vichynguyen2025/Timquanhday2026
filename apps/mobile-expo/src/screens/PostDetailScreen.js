@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
   Image, TextInput, Alert, KeyboardAvoidingView, Platform, Dimensions, ScrollView,
@@ -224,13 +224,13 @@ export default function PostDetailScreen({ route, navigation }) {
     const onCommentNew = (data) => {
       // data = { ...comment, post: { ... } }
       const post_id = data?.post_id || data?.post?.id || data?.postId;
+      // Skip if this is our own comment (already in state via optimistic + API)
+      if (data?.user_id === user?.id) return;
       if (post_id === postId) {
         // Full comment data in socket payload → add directly, no fetch
         const newComment = { ...data, is_liked: false, like_count: 0 };
-        // Remove the nested post object
         delete newComment.post;
         setComments(prev => {
-          // Don't add if already in state (e.g. our own optimistic comment)
           if (prev.some(c => c.id === newComment.id || c.client_id === newComment.id)) return prev;
           return [...prev, newComment];
         });
@@ -255,7 +255,7 @@ export default function PostDetailScreen({ route, navigation }) {
       socket.off("comment:deleted", onCommentDeleted);
       socket.off("comment:like", onCommentLike);
     };
-  }, [postId]);
+  }, [postId, user?.id]);
 
   // Auto-focus comment input if navigated with focusComment
   useEffect(() => {
@@ -338,68 +338,63 @@ export default function PostDetailScreen({ route, navigation }) {
   const authorName = isMyPost ? (user.name || post.user_name) : (post?.user_name || "Người dùng");
   const authorAvatar = isMyPost ? (user.avatar || post?.user_avatar) : post?.user_avatar;
 
-  // Render post header section
-  const renderPostCard = () => {
-    if (!post) return null;
-    return (
-      <View style={styles.postCard}>
-        {/* Header */}
-        <View style={styles.postHeader}>
-          <View style={styles.postAvatar}>
-            {authorAvatar ? (
-              <Image source={{ uri: authorAvatar }} style={styles.postAvatarImg} />
-            ) : (
-              <Text style={styles.postAvatarText}>{(authorName || "?")[0].toUpperCase()}</Text>
-            )}
+  // Memoize root comments + post card — prevent re-create on every keystroke (flicker fix)
+  const rootComments = useMemo(() => comments.filter(c => c.parent_id == null), [comments]);
+  const postCardEl = useMemo(() => (
+    <PostCard post={post} user={user} authorName={authorName} authorAvatar={authorAvatar} media={media} dist={dist} formatTime={formatTime} togglePostLike={togglePostLike} commentInputRef={commentInputRef} />
+  ), [post, user, authorName, authorAvatar, media, dist]);
+
+  // ─── Post Card component (separate = no re-render on commentText change) ──
+function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTime, togglePostLike, commentInputRef }) {
+  if (!post) return null;
+  return (
+    <View style={styles.postCard}>
+      <View style={styles.postHeader}>
+        <View style={styles.postAvatar}>
+          {authorAvatar ? (
+            <Image source={{ uri: authorAvatar }} style={styles.postAvatarImg} />
+          ) : (
+            <Text style={styles.postAvatarText}>{(authorName || "?")[0].toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.postUserName} numberOfLines={1}>{authorName}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
+            {post.location_name ? <Text style={styles.postLocation} numberOfLines={1}>{post.location_name}</Text> : null}
+            {dist ? <Text style={styles.postDistance}>📍 {dist}</Text> : null}
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.postUserName} numberOfLines={1}>{authorName}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
-              {post.location_name ? <Text style={styles.postLocation} numberOfLines={1}>{post.location_name}</Text> : null}
-              {dist ? <Text style={styles.postDistance}>📍 {dist}</Text> : null}
-            </View>
-          </View>
-          <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
         </View>
-
-        {/* Content */}
-        {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
-
-        {/* Media */}
-        <DetailMedia images={media} />
-
-        {/* Action counts */}
-        <View style={styles.countsRow}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-            <Ionicons name="heart" size={14} color="#ED4956" />
-            <Text style={styles.countsText}>{post.like_count || 0}</Text>
-          </View>
-          <Text style={styles.countsText}>{post.comment_count || 0} bình luận</Text>
-        </View>
-
-        {/* Actions */}
-        <View style={styles.postActions}>
-          <TouchableOpacity onPress={togglePostLike} style={styles.postAction}>
-            <Ionicons name={post.is_liked ? "heart" : "heart-outline"} size={22} color={post.is_liked ? "#EF4444" : "#000"} />
-            <Text style={[styles.postActionText, post.is_liked && { color: "#EF4444" }]}>Thích</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => commentInputRef.current?.focus()} style={styles.postAction}>
-            <Ionicons name="chatbubble-outline" size={21} color="#000" />
-            <Text style={styles.postActionText}>Bình luận</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.postAction}>
-            <Ionicons name="paper-plane-outline" size={21} color="#000" />
-            <Text style={styles.postActionText}>Chia sẻ</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Comments label */}
-        <View style={styles.commentsHeader}>
-          <Text style={styles.commentsTitle}>Bình luận ({post.comment_count || 0})</Text>
-        </View>
+        <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
       </View>
-    );
-  };
+      {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+      <DetailMedia images={media} />
+      <View style={styles.countsRow}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Ionicons name="heart" size={14} color="#ED4956" />
+          <Text style={styles.countsText}>{post.like_count || 0}</Text>
+        </View>
+        <Text style={styles.countsText}>{post.comment_count || 0} bình luận</Text>
+      </View>
+      <View style={styles.postActions}>
+        <TouchableOpacity onPress={togglePostLike} style={styles.postAction}>
+          <Ionicons name={post.is_liked ? "heart" : "heart-outline"} size={22} color={post.is_liked ? "#EF4444" : "#000"} />
+          <Text style={[styles.postActionText, post.is_liked && { color: "#EF4444" }]}>Thích</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => commentInputRef?.current?.focus()} style={styles.postAction}>
+          <Ionicons name="chatbubble-outline" size={21} color="#000" />
+          <Text style={styles.postActionText}>Bình luận</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.postAction}>
+          <Ionicons name="paper-plane-outline" size={21} color="#000" />
+          <Text style={styles.postActionText}>Chia sẻ</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.commentsHeader}>
+        <Text style={styles.commentsTitle}>Bình luận ({post.comment_count || 0})</Text>
+      </View>
+    </View>
+  );
+}
 
   return (
     <KeyboardAvoidingView
@@ -421,10 +416,10 @@ export default function PostDetailScreen({ route, navigation }) {
       ) : (
         <FlatList
           ref={listRef}
-          data={comments.filter(c => c.parent_id == null)}
+          data={rootComments}
           keyExtractor={(item) => item.client_id || item.id || `temp_${item.created_at}_${item.content}`}
           style={{ flex: 1 }}
-          ListHeaderComponent={renderPostCard}
+          ListHeaderComponent={postCardEl}
           contentContainerStyle={{ paddingBottom: 12 }}
           ListEmptyComponent={commentLoading ? (
             <View style={{ padding: 20, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
