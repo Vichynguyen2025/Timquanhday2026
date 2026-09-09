@@ -380,40 +380,51 @@ export default function ChatListScreen({ navigation }) {
   );
 
   // ─── Render suggested group ──────────────
-  const renderGroup = ({ item }) => (
-    <TouchableOpacity
-      style={styles.onvItem}
-      activeOpacity={0.7}
-      onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.name || "Nhóm", type: "group" })}
-    >
-      <View style={styles.avatarWrap}>
-        <View style={[styles.avatar, { backgroundColor: "#F0FDF4" }]}>
-          <Ionicons name="people" size={24} color="#22C55E" />
-        </View>
-      </View>
-      <View style={styles.convInfo}>
-        <View style={styles.convTop}>
-          <Text style={styles.convName} numberOfLines={1}>{item.name || "Nhóm"}</Text>
-          {item.distance != null && <Text style={{ fontSize: 11, color: "#22C55E" }}>{item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`}</Text>}
-        </View>
-        <View style={styles.convBottom}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 2, flex: 1 }}>
-            {item.members?.slice(0, 3).map(m => (
-              <View key={m.id} style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center", marginRight: -4 }}>
-                {m.avatar ? (
-                  <Image source={{ uri: m.avatar }} style={{ width: 20, height: 20, borderRadius: 10 }} />
-                ) : (
-                  <Text style={{ fontSize: 9, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>
-                )}
-              </View>
-            ))}
-            {item.members?.length > 3 && <Text style={{ fontSize: 10, color: "#9CA3AF" }}>+{item.members.length - 3}</Text>}
-            <Text style={[styles.convLast, { color: "#6B7280" }]} numberOfLines={1}>  {item.last_message?.substring(0, 25) || "Tham gia nhóm"}</Text>
+  const renderGroup = ({ item }) => {
+    // Label hiển thị theo cách khớp: GPS → khoảng cách; province → "Cùng tỉnh"; address → địa chỉ
+    const matchLabel = item.match_type === 'province'
+      ? `📍 ${item.province}`
+      : item.match_type === 'recent'
+        ? '🆕 Mới'
+        : (item.distance != null ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : (item.address_label || 'Đề xuất'));
+    const subLabel = item.address_label && item.address_label !== item.province
+      ? item.address_label
+      : (item.last_message?.substring(0, 30) || 'Tham gia nhóm');
+    return (
+      <TouchableOpacity
+        style={styles.onvItem}
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.name || "Nhóm", type: "group" })}
+      >
+        <View style={styles.avatarWrap}>
+          <View style={[styles.avatar, { backgroundColor: "#F0FDF4" }]}>
+            <Ionicons name="people" size={24} color="#22C55E" />
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.convInfo}>
+          <View style={styles.convTop}>
+            <Text style={styles.convName} numberOfLines={1}>{item.name || "Nhóm"}</Text>
+            <Text style={{ fontSize: 11, color: "#22C55E", fontWeight: "600" }}>{matchLabel}</Text>
+          </View>
+          <View style={styles.convBottom}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 2, flex: 1 }}>
+              {item.members?.slice(0, 3).map(m => (
+                <View key={m.id} style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center", marginRight: -4 }}>
+                  {m.avatar ? (
+                    <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={{ width: 20, height: 20, borderRadius: 10 }} />
+                  ) : (
+                    <Text style={{ fontSize: 9, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>
+                  )}
+                </View>
+              ))}
+              {item.members?.length > 3 && <Text style={{ fontSize: 10, color: "#9CA3AF" }}>+{item.members.length - 3}</Text>}
+              <Text style={[styles.convLast, { color: "#6B7280" }]} numberOfLines={1}>  {subLabel}</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

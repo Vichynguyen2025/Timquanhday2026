@@ -127,7 +127,7 @@ router.post('/group', authenticate, async (req, res) => {
   }
 });
 
-// ─── Get nearby groups (by group location or member proximity) ──
+// ─── Get nearby groups (by address + GPS proximity) ──
 router.get('/nearby-groups', authenticate, async (req, res) => {
   try {
     const radius = parseInt(req.query.radius || '500');
@@ -136,13 +136,15 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
       return res.status(400).json({ error: `Invalid radius. Allowed: ${validRadii.join(', ')}` });
     }
 
-    // Get current user location
+    // Get current user GPS location
     const userLoc = await queryOne('SELECT lat, lng FROM user_locations WHERE user_id = ?', [req.user.id]);
-    if (!userLoc) return res.json({ groups: [] });
+    // Get user's hometown (province) from profile
+    const userProfile = await queryOne('SELECT hometown FROM users WHERE id = ?', [req.user.id]);
+    const userProvince = userProfile?.hometown || null;
 
     const { haversineDistance } = require('../utils/helpers.js');
 
-    // Find groups where user is either NOT a member OR is a member (but didn't soft-delete)
+    // Find groups user is NOT a member of (or soft-deleted)
     const candidateGroups = await query(`
       SELECT DISTINCT c.id, c.name, c.type, c.lat as group_lat, c.lng as group_lng,
         c.ward, c.district, c.province, c.street, c.created_at,
@@ -158,36 +160,66 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
     const result = [];
     for (const g of candidateGroups) {
       let minDist = Infinity;
+      let matchType = null; // 'gps' | 'member_gps' | 'province' | 'district'
 
-      // Try group's own lat/lng first
-      if (g.group_lat && g.group_lng) {
+      // 1 — Try group's own lat/lng distance
+      if (g.group_lat && g.group_lng && userLoc) {
         minDist = haversineDistance(userLoc.lat, userLoc.lng, g.group_lat, g.group_lng) * 1000;
+        if (minDist <= radius) matchType = 'gps';
       }
 
-      // Also check nearest member location
-      const memberLocs = await query(`
-        SELECT ul.lat, ul.lng
-        FROM conversation_members cm
-        JOIN user_locations ul ON ul.user_id = cm.user_id
-        WHERE cm.conversation_id = ? AND cm.user_id != ? AND ul.lat IS NOT NULL
-      `, [g.id, req.user.id]);
+      // 2 — Check member GPS proximity (fallback)
+      if (!matchType && userLoc) {
+        const memberLocs = await query(`
+          SELECT ul.lat, ul.lng
+          FROM conversation_members cm
+          JOIN user_locations ul ON ul.user_id = cm.user_id
+          WHERE cm.conversation_id = ? AND cm.user_id != ? AND ul.lat IS NOT NULL
+        `, [g.id, req.user.id]);
 
-      for (const ml of memberLocs) {
-        const dist = haversineDistance(userLoc.lat, userLoc.lng, ml.lat, ml.lng) * 1000;
-        if (dist < minDist) minDist = dist;
+        for (const ml of memberLocs) {
+          const dist = haversineDistance(userLoc.lat, userLoc.lng, ml.lat, ml.lng) * 1000;
+          if (dist < minDist) minDist = dist;
+          if (dist <= radius) { matchType = 'member_gps'; break; }
+        }
+        // Keep the actual minDist for sorting even if not matched by GPS
       }
 
-      if (minDist <= radius) {
+      // 3 — Match by province (same tỉnh/thành phố)
+      if (!matchType && userProvince && g.province && g.province === userProvince) {
+        matchType = 'province';
+      }
+
+      // 4 — If still no match and no GPS data at all, show recently created groups (fallback)
+      if (!matchType && !userLoc && !userProvince) {
+        matchType = 'recent';
+      }
+
+      if (matchType) {
         const members = await query(`
           SELECT u.id, u.name, u.avatar FROM conversation_members cm
           JOIN users u ON u.id = cm.user_id
           WHERE cm.conversation_id = ? AND cm.deleted_at IS NULL LIMIT 4
         `, [g.id]);
-        result.push({ ...g, distance: Math.round(minDist), members });
+        result.push({
+          ...g,
+          distance: minDist === Infinity ? null : Math.round(minDist),
+          address_label: [g.street, g.ward, g.district, g.province].filter(Boolean).join(', '),
+          match_type: matchType,
+          members
+        });
       }
     }
 
-    res.json({ groups: result.sort((a, b) => a.distance - b.distance), radius });
+    // Sort: GPS-matched first (by distance), then province-matched, then recent
+    const sortOrder = { gps: 0, member_gps: 1, province: 2, district: 3, recent: 4 };
+    result.sort((a, b) => {
+      const orderDiff = (sortOrder[a.match_type] || 9) - (sortOrder[b.match_type] || 9);
+      if (orderDiff !== 0) return orderDiff;
+      return (a.distance || 99999) - (b.distance || 99999);
+    });
+
+    res.json({ groups: result, radius });
   } catch (err) {
     console.error('[NearbyGroups] Error:', err);
     res.status(500).json({ error: 'Internal server error' });
