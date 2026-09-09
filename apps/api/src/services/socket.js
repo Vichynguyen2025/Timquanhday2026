@@ -119,10 +119,25 @@ export function setupSocket(io) {
         // Broadcast to conversation room EXCEPT sender (sender gets ACK)
         socket.to(`conversation:${conversationId}`).emit('message:new', message);
 
-        // Notify specific user if needed (Messenger only — NO notification created)
-        // Message badge uses message:new event + unread-count API, NOT notifications table
+        // For private chats, notify the specific receiver
         if (receiverId) {
           io.to(`user:${receiverId}`).emit('message:new', message);
+        }
+
+        // For group chats, notify ALL members (except sender) so ChatListScreen gets realtime
+        if (!receiverId) {
+          // Get group members
+          try {
+            const members = await query(
+              'SELECT user_id FROM conversation_members WHERE conversation_id = ? AND user_id != ? AND deleted_at IS NULL',
+              [conversationId, userId]
+            );
+            for (const member of members) {
+              io.to(`user:${member.user_id}`).emit('message:new', message);
+            }
+          } catch (e) {
+            // If member fetch fails, at least the conversation room still works
+          }
         }
 
         // Update conversation last message

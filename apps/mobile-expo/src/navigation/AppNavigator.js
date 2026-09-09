@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useBadge } from "../contexts/BadgeContext";
 import LoginScreen from "../screens/LoginScreen";
 import RegisterScreen from "../screens/RegisterScreen";
+import ForgotPasswordScreen from "../screens/ForgotPasswordScreen";
 import ChatListScreen from "../screens/ChatListScreen";
 import ChatDetailScreen from "../screens/ChatDetailScreen";
 import FeedScreen from "../screens/FeedScreen";
@@ -108,6 +109,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
         )}
       </Stack.Navigator>

@@ -1,0 +1,26 @@
+{
+  "cli": {
+    "version": ">= 14.0.0",
+    "promptToConfigure": false,
+    "requireCommit": false
+  },
+  "build": {
+    "preview": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "EXPO_USE_DEV_SERVER": "0"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
