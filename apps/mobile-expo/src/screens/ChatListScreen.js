@@ -101,8 +101,9 @@ export default function ChatListScreen({ navigation }) {
   // PERSISTENT HANDLER — updates conversation list even when NOT focused
   // NEVER cleaned up by focus/blur — survives tab switches
   // ════════════════════════════════════════
+  const { socket: ctxSocket } = useSocket();
   useEffect(() => {
-    const socket = getSocket();
+    const socket = ctxSocket || getSocket();
     if (!socket) return;
     const handler = (msg) => {
       setConversations((prev) => {
@@ -118,7 +119,7 @@ export default function ChatListScreen({ navigation }) {
     return () => {
       socket.off("message:new", handler);
     };
-  }, [currentUserId]);
+  }, [ctxSocket, currentUserId]);
 
   async function fetchUnreadCount() {
     try {
