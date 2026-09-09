@@ -18,43 +18,46 @@ const GROUP_RADII = [100, 200, 500];
 // ─── Vietnam address data (real provinces/districts/wards) ──
 import { VIETNAM_PROVINCES, DISTRICTS_BY_PROVINCE, WARDS_BY_DISTRICT } from "../data/vietnam_address";
 
-// ─── Address Picker Modal (table list, like EditProfile) ──
-function AddressPickerModal({ visible, title, data, value, onSelect, onClose }) {
+// ─── Address Picker as Inline Overlay (NOT Modal — nested Modal is broken on Expo Go)
+function AddressPickerOverlay({ visible, title, data, value, onSelect, onClose }) {
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={pickerStyles.overlay}>
-        <View style={pickerStyles.container}>
-          <View style={pickerStyles.header}>
-            <Text style={pickerStyles.title}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-              <Ionicons name="close" size={24} color="#111827" />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={data}
-            keyExtractor={(_, i) => String(i)}
-            contentContainerStyle={{ paddingBottom: 24 }}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[pickerStyles.item, value === item && pickerStyles.itemActive]}
-                onPress={() => { onSelect(item); onClose(); }}
-                activeOpacity={0.7}
-              >
-                <Text style={[pickerStyles.itemText, value === item && pickerStyles.itemTextActive]}>
-                  {item}
-                </Text>
-                {value === item ? <Ionicons name="checkmark" size={20} color="#2563EB" /> : null}
-              </TouchableOpacity>
-            )}
-          />
+    <View style={pickerStyles.overlayAbs}>
+      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+      <View style={pickerStyles.container}>
+        <View style={pickerStyles.header}>
+          <Text style={pickerStyles.title}>{title}</Text>
+          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+            <Ionicons name="close" size={24} color="#111827" />
+          </TouchableOpacity>
         </View>
+        <FlatList
+          data={data}
+          keyExtractor={(_, i) => String(i)}
+          contentContainerStyle={{ paddingBottom: 24 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[pickerStyles.item, value === item && pickerStyles.itemActive]}
+              onPress={() => { onSelect(item); onClose(); }}
+              activeOpacity={0.7}
+            >
+              <Text style={[pickerStyles.itemText, value === item && pickerStyles.itemTextActive]}>
+                {item}
+              </Text>
+              {value === item ? <Ionicons name="checkmark" size={20} color="#2563EB" /> : null}
+            </TouchableOpacity>
+          )}
+        />
       </View>
-    </Modal>
+    </View>
   );
 }
 
 const pickerStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  overlayAbs: {
+    ...StyleSheet.absoluteFill, zIndex: 999,
+    backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end",
+  },
   container: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "75%", paddingBottom: 12 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 0.5, borderBottomColor: "#E5E7EB" },
   title: { fontSize: 17, fontWeight: "700", color: "#111827" },
@@ -538,143 +541,142 @@ export default function ChatListScreen({ navigation }) {
         </>
       )}
 
-      {/* ─── Create Group Modal ──────────── */}
-      <Modal visible={showCreateGroup} transparent animationType="slide" onRequestClose={() => setShowCreateGroup(false)}>
-        <View style={sModal.overlay}>
-          <View style={sModal.container}>
-            <View style={sModal.handleBar} />
-            <View style={sModal.header}>
-              <TouchableOpacity onPress={() => setShowCreateGroup(false)} style={sModal.headerBtn}>
-                <Ionicons name="close" size={22} color="#6B7280" />
-              </TouchableOpacity>
-              <Text style={sModal.title}>Tạo nhóm mới</Text>
-              <TouchableOpacity onPress={handleCreateGroup} disabled={creating} style={[sModal.headerBtn, creating && { opacity: 0.5 }]}>
-                {creating ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={[sModal.doneBtn, (!groupName.trim() || groupMembers.length < 2) && { opacity: 0.4 }]}>Tạo</Text>}
-              </TouchableOpacity>
-            </View>
-            <View style={sModal.nameRow}>
-              <View style={sModal.nameIcon}><Ionicons name="people" size={18} color={colors.primary} /></View>
-              <TextInput style={sModal.nameInput} placeholder="Tên nhóm" placeholderTextColor="#9CA3AF" value={groupName} onChangeText={setGroupName} maxLength={100} autoFocus />
-            </View>
-            {groupMembers.length > 0 && (
-              <View style={sModal.selectedRow}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                  {groupMembers.map(m => (
-                    <TouchableOpacity key={m.id} style={sModal.selectedChip} onPress={() => toggleMember(m)}>
-                      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                        {m.avatar ? <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={{ width: 28, height: 28, borderRadius: 14 }} />
-                          : <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>}
-                      </View>
-                      <Text style={sModal.selectedName} numberOfLines={1}>{m.name}</Text>
-                      <Ionicons name="close-circle" size={16} color="#EF4444" />
+      {/* ─── Create Group Modal ───────────────────── */}
+            <Modal visible={showCreateGroup} transparent animationType="slide" onRequestClose={() => setShowCreateGroup(false)}>
+              <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+              <View style={sModal.overlay}>
+                <View style={sModal.container}>
+                  <View style={sModal.handleBar} />
+                  <View style={sModal.header}>
+                    <TouchableOpacity onPress={() => setShowCreateGroup(false)} style={sModal.headerBtn}>
+                      <Ionicons name="close" size={22} color="#6B7280" />
                     </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            <ScrollView style={sModal.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              {/* Đề xuất gần bạn — chỉ người ở gần */}
-              {loadingNearby ? <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} /> : (
-                suggestedNearby.length > 0 ? (
-                  <>
-                    <Text style={sModal.sectionTitle}><Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn</Text>
-                    <View>
-                    {suggestedNearby.slice(0, 8).map(item => (
-                        <TouchableOpacity key={item.id} style={sModal.suggestedUserItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
-                          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
-                            {item.avatar ? <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 36, height: 36, borderRadius: 18 }} />
-                              : <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
-                          </View>
-                          <View style={{ flex: 1, marginLeft: 10 }}>
-                            <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
-                            {item.distance != null && <Text style={{ fontSize: 11, color: "#22C55E" }}>{item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`}</Text>}
-                          </View>
-                          <View style={[sModal.addBtnSm, groupMembers.find(m => m.id === item.id) && sModal.addBtnActive]}>
-                            <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={16} color="#fff" />
-                          </View>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                ) : (
-                  <View style={{ alignItems: "center", paddingVertical: 16 }}>
-                    <Ionicons name="people-outline" size={26} color="#D1D5DB" />
-                    <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6 }}>Không có người dùng gần đây</Text>
+                    <Text style={sModal.title}>Tạo nhóm mới</Text>
+                    <TouchableOpacity onPress={handleCreateGroup} disabled={creating} style={[sModal.headerBtn, creating && { opacity: 0.5 }]}>
+                      {creating ? <ActivityIndicator size="small" color={colors.primary} /> : <Text style={[sModal.doneBtn, (!groupName.trim() || groupMembers.length < 2) && { opacity: 0.4 }]}>Tạo</Text>}
+                    </TouchableOpacity>
                   </View>
-                )
-              )}
+                  <View style={sModal.nameRow}>
+                    <View style={sModal.nameIcon}><Ionicons name="people" size={18} color={colors.primary} /></View>
+                    <TextInput style={sModal.nameInput} placeholder="Tên nhóm" placeholderTextColor="#9CA3AF" value={groupName} onChangeText={setGroupName} maxLength={100} autoFocus />
+                  </View>
+                  {groupMembers.length > 0 && (
+                    <View style={sModal.selectedRow}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                        {groupMembers.map(m => (
+                          <TouchableOpacity key={m.id} style={sModal.selectedChip} onPress={() => toggleMember(m)}>
+                            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                              {m.avatar ? <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                                : <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>}
+                            </View>
+                            <Text style={sModal.selectedName} numberOfLines={1}>{m.name}</Text>
+                            <Ionicons name="close-circle" size={16} color="#EF4444" />
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                  <ScrollView style={sModal.body} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                    {/* Đề xuất gần bạn */}
+                    {loadingNearby ? <ActivityIndicator size="small" color={colors.primary} style={{ paddingVertical: 12 }} /> : (
+                      suggestedNearby.length > 0 ? (
+                        <>
+                          <Text style={sModal.sectionTitle}><Ionicons name="navigate" size={12} color={colors.primary} />  Đề xuất gần bạn</Text>
+                          <View>
+                          {suggestedNearby.slice(0, 8).map(item => (
+                              <TouchableOpacity key={item.id} style={sModal.suggestedUserItem} onPress={() => toggleMember(item)} activeOpacity={0.6}>
+                                <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center" }}>
+                                  {item.avatar ? <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                                    : <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primary }}>{(item.name || "?")[0]}</Text>}
+                                </View>
+                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                  <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>{item.name}</Text>
+                                  {item.distance != null && <Text style={{ fontSize: 11, color: "#22C55E" }}>{item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`}</Text>}
+                                </View>
+                                <View style={[sModal.addBtnSm, groupMembers.find(m => m.id === item.id) && sModal.addBtnActive]}>
+                                  <Ionicons name={groupMembers.find(m => m.id === item.id) ? "checkmark" : "add"} size={16} color="#fff" />
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        </>
+                      ) : (
+                        <View style={{ alignItems: "center", paddingVertical: 16 }}>
+                          <Ionicons name="people-outline" size={26} color="#D1D5DB" />
+                          <Text style={{ fontSize: 13, color: "#9CA3AF", marginTop: 6 }}>Không có người dùng gần đây</Text>
+                        </View>
+                      )
+                    )}
 
-              {/* ─── Địa chỉ nhóm — flat form ── */}
-              <Text style={[sModal.sectionTitle, { marginTop: 14, marginBottom: 6 }]}><Ionicons name="location" size={12} color="#EF4444" />  Địa chỉ nhóm</Text>
-              <View style={addrStyles.card}>
-                {/* Hàng 1: Tỉnh + Quận (2 cột) */}
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }]} onPress={() => { setGroupPicker('province'); }} activeOpacity={0.7}>
-                    <Text style={[addrStyles.pickerText, !groupProvince && addrStyles.pickerPlaceholder]} numberOfLines={1}>
-                      {groupProvince || 'Tỉnh/TP'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }, !groupProvince && addrStyles.pickerDisabled]} onPress={() => { if (groupProvince) setGroupPicker('district'); }} activeOpacity={0.7}>
-                    <Text style={[addrStyles.pickerText, !groupDistrict && addrStyles.pickerPlaceholder]} numberOfLines={1}>
-                      {groupDistrict || 'Quận/Huyện'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
-                  </TouchableOpacity>
-                </View>
-                {/* Hàng 2: Phường/Xã */}
-                {addressWards.length > 0 ? (
-                  <TouchableOpacity style={[addrStyles.pickerRow, !groupDistrict && addrStyles.pickerDisabled]} onPress={() => { if (groupDistrict) setGroupPicker('ward'); }} activeOpacity={0.7}>
-                    <Text style={[addrStyles.pickerText, !groupWard && addrStyles.pickerPlaceholder]} numberOfLines={1}>
-                      {groupWard || (groupDistrict ? 'Phường/Xã' : '...')}
-                    </Text>
-                    <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
-                  </TouchableOpacity>
-                ) : (
-                  <TextInput style={addrStyles.borderedInput} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} editable={!!groupDistrict} />
-                )}
-                {/* Hàng 3: Địa chỉ chi tiết (luôn hiển thị) */}
-                <View style={addrStyles.detailRow}>
-                  <Ionicons name="home-outline" size={16} color="#EF4444" style={{ marginRight: 8 }} />
-                  <TextInput
-                    style={addrStyles.input}
-                    placeholder="Tòa nhà, số nhà, đường"
-                    placeholderTextColor="#9CA3AF"
-                    value={groupStreet}
-                    onChangeText={setGroupStreet}
+                    {/* ─── Địa chỉ nhóm ── */}
+                    <Text style={[sModal.sectionTitle, { marginTop: 14, marginBottom: 6 }]}><Ionicons name="location" size={12} color="#EF4444" />  Địa chỉ nhóm</Text>
+                    <View style={addrStyles.card}>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }]} onPress={() => { setGroupPicker('province'); }} activeOpacity={0.7}>
+                          <Text style={[addrStyles.pickerText, !groupProvince && addrStyles.pickerPlaceholder]} numberOfLines={1}>
+                            {groupProvince || 'Tỉnh/TP'}
+                          </Text>
+                          <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[addrStyles.pickerRow, { flex: 1 }, !groupProvince && addrStyles.pickerDisabled]} onPress={() => { if (groupProvince) setGroupPicker('district'); }} activeOpacity={0.7}>
+                          <Text style={[addrStyles.pickerText, !groupDistrict && addrStyles.pickerPlaceholder]} numberOfLines={1}>
+                            {groupDistrict || 'Quận/Huyện'}
+                          </Text>
+                          <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      </View>
+                      {addressWards.length > 0 ? (
+                        <TouchableOpacity style={[addrStyles.pickerRow, !groupDistrict && addrStyles.pickerDisabled]} onPress={() => { if (groupDistrict) setGroupPicker('ward'); }} activeOpacity={0.7}>
+                          <Text style={[addrStyles.pickerText, !groupWard && addrStyles.pickerPlaceholder]} numberOfLines={1}>
+                            {groupWard || (groupDistrict ? 'Phường/Xã' : '...')}
+                          </Text>
+                          <Ionicons name="chevron-down" size={14} color="#9CA3AF" />
+                        </TouchableOpacity>
+                      ) : (
+                        <TextInput style={addrStyles.borderedInput} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} editable={!!groupDistrict} />
+                      )}
+                      <View style={addrStyles.detailRow}>
+                        <Ionicons name="home-outline" size={16} color="#EF4444" style={{ marginRight: 8 }} />
+                        <TextInput
+                          style={addrStyles.input}
+                          placeholder="Tòa nhà, số nhà, đường"
+                          placeholderTextColor="#9CA3AF"
+                          value={groupStreet}
+                          onChangeText={setGroupStreet}
+                        />
+                      </View>
+                    </View>
+                  </ScrollView>
+
+                  {/* ─── Address Picker Overlays (INSIDE main modal — NOT nested Modal) ── */}
+                  <AddressPickerOverlay
+                    visible={groupPicker === 'province'}
+                    title="Chọn Tỉnh / Thành phố"
+                    data={VIETNAM_PROVINCES}
+                    value={groupProvince}
+                    onSelect={(v) => { setGroupProvince(v); setGroupDistrict(""); setGroupWard(""); }}
+                    onClose={() => setGroupPicker(null)}
+                  />
+                  <AddressPickerOverlay
+                    visible={groupPicker === 'district'}
+                    title="Chọn Quận / Huyện"
+                    data={addressDistricts}
+                    value={groupDistrict}
+                    onSelect={(v) => { setGroupDistrict(v); setGroupWard(""); }}
+                    onClose={() => setGroupPicker(null)}
+                  />
+                  <AddressPickerOverlay
+                    visible={groupPicker === 'ward'}
+                    title="Chọn Phường / Xã"
+                    data={addressWards}
+                    value={groupWard}
+                    onSelect={setGroupWard}
+                    onClose={() => setGroupPicker(null)}
                   />
                 </View>
               </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ─── Address Picker Modals (cascade: province → district → ward) ── */}
-      <AddressPickerModal
-        visible={groupPicker === 'province'}
-        title="Chọn Tỉnh / Thành phố"
-        data={VIETNAM_PROVINCES}
-        value={groupProvince}
-        onSelect={(v) => { setGroupProvince(v); setGroupDistrict(""); setGroupWard(""); }}
-        onClose={() => setGroupPicker(null)}
-      />
-      <AddressPickerModal
-        visible={groupPicker === 'district'}
-        title="Chọn Quận / Huyện"
-        data={addressDistricts}
-        value={groupDistrict}
-        onSelect={(v) => { setGroupDistrict(v); setGroupWard(""); }}
-        onClose={() => setGroupPicker(null)}
-      />
-      <AddressPickerModal
-        visible={groupPicker === 'ward'}
-        title="Chọn Phường / Xã"
-        data={addressWards}
-        value={groupWard}
-        onSelect={setGroupWard}
-        onClose={() => setGroupPicker(null)}
-      />
+              </KeyboardAvoidingView>
+            </Modal>
       
     </View>
   );
