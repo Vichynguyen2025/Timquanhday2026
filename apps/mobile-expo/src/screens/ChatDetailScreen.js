@@ -532,7 +532,7 @@ export default function ChatDetailScreen({ route, navigation }) {
                     <Text style={styles.msgAvatarText}>{(isGroup ? (item.sender_name || "?") : (otherUser?.name || "?"))[0].toUpperCase()}</Text>
                   )}
                 </View>
-                {isGroup ? <Text style={styles.msgSenderLabel} numberOfLines={1}>{item.sender_name || "?"}</Text> : null}
+                {isGroup ? (function(){ return <Text style={styles.msgSenderLabel} numberOfLines={1}>{item.sender_name || "?"}</Text>; })() : null}
               </View> : null}
             <View style={{ maxWidth: isImage ? "80%" : "82%" }}>
               {item.is_deleted ? (
@@ -586,9 +586,10 @@ export default function ChatDetailScreen({ route, navigation }) {
                       <Text style={[styles.fileText, isMine && { color: "#fff" }]} numberOfLines={1}>{item.content || "File"}</Text>
                     </View>
                   ) : (
-                    {/* Show sender name for group text messages */}
                     <View>
-                      {showGroupSender ? <Text style={styles.msgGroupSender}>{item.sender_name || "?"}</Text> : null}
+                      {showGroupSender ? (function(){
+                        return <Text style={styles.msgGroupSender}>{item.sender_name || "?"}</Text>;
+                      })() : null}
                       <Text style={[styles.msgText, isMine && { color: "#fff" }, showGroupSender && { marginTop: 2 }]}>{item.content}</Text>
                     </View>
                   )}
