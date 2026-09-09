@@ -221,9 +221,19 @@ export default function PostDetailScreen({ route, navigation }) {
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
-    const onCommentNew = ({ post_id }) => {
+    const onCommentNew = (data) => {
+      // data = { ...comment, post: { ... } }
+      const post_id = data?.post_id || data?.post?.id || data?.postId;
       if (post_id === postId) {
-        fetchComments();
+        // Full comment data in socket payload → add directly, no fetch
+        const newComment = { ...data, is_liked: false, like_count: 0 };
+        // Remove the nested post object
+        delete newComment.post;
+        setComments(prev => {
+          // Don't add if already in state (e.g. our own optimistic comment)
+          if (prev.some(c => c.id === newComment.id || c.client_id === newComment.id)) return prev;
+          return [...prev, newComment];
+        });
         setPost(prev => prev ? { ...prev, comment_count: (prev.comment_count || 0) + 1 } : prev);
       }
     };
@@ -233,13 +243,19 @@ export default function PostDetailScreen({ route, navigation }) {
         setPost(prev => prev ? { ...prev, comment_count: Math.max((prev.comment_count || 0) - 1, 0) } : prev);
       }
     };
+    // Listen for reaction updates too
+    const onCommentLike = ({ commentId, liked, like_count }) => {
+      setComments(prev => prev.map(c => c.id === commentId ? { ...c, is_liked: liked, like_count } : c));
+    };
     socket.on("comment:new", onCommentNew);
     socket.on("comment:deleted", onCommentDeleted);
+    socket.on("comment:like", onCommentLike);
     return () => {
       socket.off("comment:new", onCommentNew);
       socket.off("comment:deleted", onCommentDeleted);
+      socket.off("comment:like", onCommentLike);
     };
-  }, [postId, fetchComments]);
+  }, [postId]);
 
   // Auto-focus comment input if navigated with focusComment
   useEffect(() => {
