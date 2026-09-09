@@ -21,6 +21,7 @@ import SOSHelperSetupScreen from "../screens/SOSHelperSetupScreen";
 import NotificationSettingsScreen from "../screens/NotificationSettingsScreen";
 import PrivacySettingsScreen from "../screens/PrivacySettingsScreen";
 import MyPostsScreen from "../screens/MyPostsScreen";
+import PostDetailScreen from "../screens/PostDetailScreen";
 import { useAuth } from "../contexts/AuthContext";
 import { colors } from "../theme/colors";
 
@@ -104,6 +105,7 @@ export default function AppNavigator() {
             <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} options={{ animation: "slide_from_right" }} />
             <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} options={{ animation: "slide_from_right" }} />
             <Stack.Screen name="MyPosts" component={MyPostsScreen} options={{ animation: "slide_from_right" }} />
+            <Stack.Screen name="PostDetail" component={PostDetailScreen} options={{ animation: "slide_from_right" }} />
           </>
         ) : (
           <>

@@ -379,19 +379,16 @@ export default function FeedScreen({ navigation }) {
 
   // ─── Comment ────────────────────────────────────
   function openComments(post) {
-    setCommentPost(post); setCommentText(""); setReplyTo(null); setCommentLoading(true); setCommentError(null);
-    api.get("/posts/" + post.id + "/comments").then((res) => {
-      const flat = res.data || [];
-      // Sort: Level 1 first (by time), then Level 2 under their parent, then Level 3
-      const l1 = flat.filter(c => c.parent_id == null).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-      const l1Ids = new Set(l1.map(c => c.id));
-      const l2 = flat.filter(c => c.parent_id && l1Ids.has(c.parent_id)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-      const l2Ids = new Set(l2.map(c => c.id));
-      const l3 = flat.filter(c => c.parent_id && l2Ids.has(c.parent_id)).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-      setComments([...l1, ...l2, ...l3]);
-    })
-      .catch(() => { setCommentError("Không thể tải bình luận"); setComments([]); })
-      .finally(() => setCommentLoading(false));
+    // Navigate to PostDetailScreen (Facebook-style) instead of modal
+    if (navigation?.navigate) {
+      navigation.navigate("PostDetail", { postId: post.id, focusComment: false });
+    }
+  }
+
+  function openPostDetail(post, focusComment) {
+    if (navigation?.navigate) {
+      navigation.navigate("PostDetail", { postId: post.id, focusComment: !!focusComment });
+    }
   }
 
   function sendComment() {
@@ -529,7 +526,7 @@ export default function FeedScreen({ navigation }) {
     const authorName = isMyPost ? (user.name || item.user_name) : (item.user_name || "Người dùng");
     const authorAvatar = isMyPost ? (user.avatar || item.user_avatar) : item.user_avatar;
     return (
-      <View style={styles.post}>
+      <TouchableOpacity style={styles.post} activeOpacity={0.95} onPress={() => openPostDetail(item, false)}>
         {/* Header */}
         <View style={styles.postHeader}>
           <View style={styles.postAvatar}>
@@ -590,7 +587,7 @@ export default function FeedScreen({ navigation }) {
           )}
           <Text style={styles.time}>{formatTime(item.created_at)}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
