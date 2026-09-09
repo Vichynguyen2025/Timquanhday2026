@@ -44,25 +44,13 @@ export default function ChatListScreen({ navigation }) {
   const [groupRadius, setGroupRadius] = useState(500);
   const [loadingGroups, setLoadingGroups] = useState(false);
 
-  // ════════════════════════════════════════
-  // EXISTING REALTIME CODE — UNTOUCHED
+  // ─── EXISTING REALTIME CODE — UNTOUCHED
   // ════════════════════════════════════════
   useFocusEffect(useCallback(() => {
     fetchConversations();
     fetchUnreadCount();
     const socket = getSocket();
     if (!socket) return;
-    const handler = (msg) => {
-      setConversations((prev) => {
-        const updated = prev.map((c) =>
-          c.id === msg.conversation_id
-            ? { ...c, last_message: msg.content || (msg.type === "image" ? "📷 Hình ảnh" : c.last_message), last_message_at: msg.created_at, unread_count: (c.unread_count || 0) + (msg.sender_id && msg.sender_id !== currentUserId ? 1 : 0) }
-            : c
-        );
-        return updated.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
-      });
-    };
-    socket.on("message:new", handler);
 
     // Realtime online/offline — update participants last_seen
     const onOnline = ({ userId }) => {
@@ -103,12 +91,34 @@ export default function ChatListScreen({ navigation }) {
     socket.on("conversation:new", onNewConv);
 
     return () => {
-      socket.off("message:new", handler);
       socket.off("user:online", onOnline);
       socket.off("user:offline", onOffline);
       socket.off("conversation:new", onNewConv);
     };
   }, [currentUserId]));
+
+  // ════════════════════════════════════════
+  // PERSISTENT HANDLER — updates conversation list even when NOT focused
+  // NEVER cleaned up by focus/blur — survives tab switches
+  // ════════════════════════════════════════
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const handler = (msg) => {
+      setConversations((prev) => {
+        const updated = prev.map((c) =>
+          c.id === msg.conversation_id
+            ? { ...c, last_message: msg.content || (msg.type === "image" ? "📷 Hình ảnh" : c.last_message), last_message_at: msg.created_at, unread_count: (c.unread_count || 0) + (msg.sender_id && msg.sender_id !== currentUserId ? 1 : 0) }
+            : c
+        );
+        return updated.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+      });
+    };
+    socket.on("message:new", handler);
+    return () => {
+      socket.off("message:new", handler);
+    };
+  }, [currentUserId]);
 
   async function fetchUnreadCount() {
     try {
