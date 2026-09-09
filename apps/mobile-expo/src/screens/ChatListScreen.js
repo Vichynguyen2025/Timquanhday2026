@@ -715,12 +715,11 @@ const sModal = StyleSheet.create({
   suggestedUserItem: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
   addBtnSm: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#D1D5DB", alignItems: "center", justifyContent: "center" },
   // User list
-    userList: { flex: 1 },
-    userItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6
-    checkBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: "#D1D5DB", alignItems: "center", justifyConten
-    checkBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-    // Address fields
-  });
+  userList: { flex: 1 },
+  userItem: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#F3F4F6" },
+  checkBtn: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: "#D1D5DB", alignItems: "center", justifyContent: "center", marginLeft: 8 },
+  checkBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+});
 
   // ─── Address field styles (Group create) ──
   const addrStyles = StyleSheet.create({
