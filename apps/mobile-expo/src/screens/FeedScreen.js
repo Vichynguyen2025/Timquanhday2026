@@ -63,9 +63,9 @@ function CommentNode({ comment, depth, flat, onReply, onDelete, formatTime }) {
     <View style={{ marginBottom: depth === 0 ? 12 : 4 }}>
       <View style={{ flexDirection: "row", gap: 8, marginLeft: indent }}>
         {/* Connector line for nested replies */}
-        {depth > 0 && (
+        {depth > 0 ? (
           <View style={{ position: "absolute", left: -8, top: 0, bottom: children.length > 0 ? -4 : 20, width: 2, backgroundColor: "#E5E7EB" }} />
-        )}
+        ) : null}
         <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}>
           {comment.user_avatar ? (
             <Image source={{ uri: comment.user_avatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }} />
@@ -376,7 +376,7 @@ export default function FeedScreen({ navigation }) {
     });
     api.post("/posts/" + commentPost.id + "/comments", payload)
       .then((res) => {
-        setComments(prev => prev.map(c => c.id === tempId ? { ...res.data, is_temp: false } : c));
+        setComments(prev => prev.map(c => c.id === tempId ? { ...c, ...res.data, parent_id: c.parent_id || res.data.parent_id, id: res.data.id || c.id, created_at: res.data.created_at || c.created_at, is_temp: false } : c));
         setReplyTo(null);
       })
       .catch(() => { setComments(prev => prev.filter(c => c.id !== tempId)); setCommentText(text); Alert.alert("Lỗi", "Không thể gửi bình luận"); });
@@ -637,7 +637,7 @@ export default function FeedScreen({ navigation }) {
             ) : (
               <FlatList
                 data={comments.filter(c => c.parent_id == null)}
-                keyExtractor={(item, i) => item.id || String(i)}
+                keyExtractor={(item) => item.id || item._id || `temp_${item.content}_${item.created_at}`}
                 style={{ flex: 1 }}
                 contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
                 ListEmptyComponent={
