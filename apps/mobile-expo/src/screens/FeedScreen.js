@@ -44,6 +44,75 @@ function formatDistance(km) {
   return `${Math.round(km)} km`;
 }
 
+// ─── Recursive Comment Node (tree with connector lines) ──
+function CommentNode({ comment, depth, flat, onReply, onDelete, formatTime }) {
+  const children = flat.filter(c => c.parent_id === comment.id);
+  const indent = depth > 0 ? 16 : 0;
+  const avatarSize = depth === 0 ? 32 : 28;
+  const fontSize = depth === 0 ? 15 : 14;
+  const bubblePad = depth === 0 ? 10 : 8;
+  const isMine = comment.user_name === "Bạn" && !comment.is_temp;
+
+  let parentName = null;
+  if (comment.parent_id) {
+    const parent = flat.find(c => c.id === comment.parent_id);
+    parentName = parent?.user_name;
+  }
+
+  return (
+    <View style={{ marginBottom: depth === 0 ? 12 : 4 }}>
+      <View style={{ flexDirection: "row", gap: 8, marginLeft: indent }}>
+        {/* Connector line for nested replies */}
+        {depth > 0 && (
+          <View style={{ position: "absolute", left: -8, top: 0, bottom: children.length > 0 ? -4 : 20, width: 2, backgroundColor: "#E5E7EB" }} />
+        )}
+        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}>
+          {comment.user_avatar ? (
+            <Image source={{ uri: comment.user_avatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }} />
+          ) : (
+            <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(comment.user_name || "?")[0].toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={[styles.commentBubble, { padding: bubblePad }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
+              <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{comment.user_name || "Người dùng"}</Text>
+              {parentName && <Text style={styles.commentReplyTo}> → {parentName}</Text>}
+              <Text style={styles.commentTime}>{formatTime(comment.created_at)}</Text>
+            </View>
+            <Text style={[styles.commentContent, { fontSize }]}>{comment.content}</Text>
+          </View>
+          {/* Actions */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2, paddingHorizontal: 4 }}>
+            <Text style={styles.commentActionText}>❤️ 0</Text>
+            <Text style={styles.commentActionSep}>·</Text>
+            <TouchableOpacity onPress={() => onReply(comment)}>
+              <Text style={styles.commentActionText}>Trả lời</Text>
+            </TouchableOpacity>
+            {isMine && (
+              <>
+                <Text style={styles.commentActionSep}>·</Text>
+                <TouchableOpacity onPress={() => onDelete(comment.id)}>
+                  <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+
+          {/* Children rendered recursively — nested inside parent */}
+          {children.length > 0 && (
+            <View style={{ marginTop: 4 }}>
+              {children.map(child => (
+                <CommentNode key={child.id} comment={child} depth={depth + 1} flat={flat} onReply={onReply} onDelete={onDelete} formatTime={formatTime} />
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // ─── Multi-image grid ─────────────────────────────
 function MediaGrid({ images, onImagePress }) {
   if (!images || images.length === 0) return null;
@@ -567,7 +636,7 @@ export default function FeedScreen({ navigation }) {
               </View>
             ) : (
               <FlatList
-                data={comments}
+                data={comments.filter(c => c.parent_id == null)}
                 keyExtractor={(item, i) => item.id || String(i)}
                 style={{ flex: 1 }}
                 contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
@@ -577,65 +646,16 @@ export default function FeedScreen({ navigation }) {
                     <Text style={{ color: "#65676B", marginTop: 8, fontSize: 14 }}>Chưa có bình luận</Text>
                   </View>
                 }
-                renderItem={({ item }) => {
-                  // Build 3-level tree from flat comments
-                  const flat = comments || [];
-                  const l1Ids = new Set(flat.filter(c => c.parent_id == null).map(c => c.id));
-                  const l2Ids = new Set(flat.filter(c => c.parent_id && l1Ids.has(c.parent_id)).map(c => c.id));
-                  const level = item.parent_id == null ? 1 : (l2Ids.has(item.parent_id) ? 2 : (l1Ids.has(item.parent_id) ? 2 : 3));
-                  const indent = level === 1 ? 0 : level === 2 ? 32 : 52;
-                  const avatarSize = level === 1 ? 32 : level === 2 ? 28 : 24;
-                  const fontSize = level === 1 ? 15 : 14;
-                  const bubblePad = level === 1 ? 10 : 8;
-                  const marginBottom = level === 1 ? 12 : 6;
-
-                  // Find parent name for reply context
-                  let parentName = null;
-                  if (level > 1 && item.parent_id) {
-                    const parent = flat.find(c => c.id === item.parent_id);
-                    parentName = parent?.user_name;
-                  }
-
-                  return (
-                    <View style={styles.commentItem}>
-                      <View style={[styles.commentRow, { marginLeft: indent }]}>
-                        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }]}>
-                          {item.user_avatar ? (
-                            <Image source={{ uri: item.user_avatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize/2 }} />
-                          ) : (
-                            <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(item.user_name || "?")[0].toUpperCase()}</Text>
-                          )}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <View style={[styles.commentBubble, { padding: bubblePad }]}>
-                            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                              <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{item.user_name || "Người dùng"}</Text>
-                              {parentName && <Text style={styles.commentReplyTo}> → {parentName}</Text>}
-                              <Text style={styles.commentTime}>{formatTime(item.created_at)}</Text>
-                            </View>
-                            <Text style={[styles.commentContent, { fontSize }]}>{item.content}</Text>
-                          </View>
-                          {/* Actions */}
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2, paddingHorizontal: 4 }}>
-                            <Text style={styles.commentActionText}>❤️ 0</Text>
-                            <Text style={styles.commentActionSep}>·</Text>
-                            <TouchableOpacity onPress={() => { setReplyTo({ id: item.id, name: item.user_name || "Người dùng" }); commentInputRef.current?.focus(); }}>
-                              <Text style={styles.commentActionText}>Trả lời</Text>
-                            </TouchableOpacity>
-                            {item.user_name === "Bạn" && !item.is_temp && (
-                              <>
-                                <Text style={styles.commentActionSep}>·</Text>
-                                <TouchableOpacity onPress={() => deleteComment(item.id)}>
-                                  <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
-                                </TouchableOpacity>
-                              </>
-                            )}
-                          </View>
-                        </View>
-                      </View>
-                    </View>
-                  );
-                }}
+                renderItem={({ item }) => (
+                  <CommentNode
+                    comment={item}
+                    depth={0}
+                    flat={comments}
+                    formatTime={formatTime}
+                    onReply={(c) => { setReplyTo({ id: c.id, name: c.user_name || "Người dùng" }); if (commentInputRef.current) commentInputRef.current.focus(); }}
+                    onDelete={deleteComment}
+                  />
+                )}
               />
             )}
             {replyTo && (
