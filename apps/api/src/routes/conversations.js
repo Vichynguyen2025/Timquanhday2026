@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query, queryOne } from '../models/db.js';
 import { authenticate } from '../middleware/auth.js';
+import { haversineDistance } from '../utils/helpers.js';
 import crypto from 'crypto';
 
 const router = Router();
@@ -49,84 +50,6 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-// Get single conversation detail
-router.get('/:id', authenticate, async (req, res) => {
-  try {
-    const conv = await queryOne('SELECT * FROM conversations WHERE id = ?', [req.params.id]);
-    if (!conv) return res.status(404).json({ error: 'Not found' });
-
-    const members = await query(`
-      SELECT u.id, u.name, u.avatar, u.bio, u.is_online, u.last_seen
-      FROM conversation_members cm
-      JOIN users u ON cm.user_id = u.id
-      WHERE cm.conversation_id = ?
-    `, [req.params.id]);
-
-    res.json({ ...conv, members });
-  } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Create conversation
-router.post('/', authenticate, async (req, res) => {
-  try {
-    const { userId: targetUserId } = req.body;
-    if (!targetUserId) return res.status(400).json({ error: 'userId required' });
-
-    const existing = await queryOne(`
-      SELECT c.id FROM conversations c
-      JOIN conversation_members cm1 ON c.id = cm1.conversation_id AND cm1.user_id = ?
-      JOIN conversation_members cm2 ON c.id = cm2.conversation_id AND cm2.user_id = ?
-      WHERE c.type = 'private'
-    `, [req.user.id, targetUserId]);
-    if (existing) return res.json({ id: existing.id });
-
-    const convId = crypto.randomUUID();
-    await query('INSERT INTO conversations (id, type) VALUES (?, ?)', [convId, 'private']);
-    await query('INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
-      [convId, req.user.id, convId, targetUserId]);
-    res.json({ id: convId });
-  } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ─── Create group chat ─────────────────────
-router.post('/group', authenticate, async (req, res) => {
-  try {
-    const { name, memberIds, lat, lng, ward, district, province, street } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'Group name required' });
-    if (!memberIds || !Array.isArray(memberIds) || memberIds.length < 2) {
-      return res.status(400).json({ error: 'At least 2 other members required' });
-    }
-    // Include creator in members
-    const allIds = [req.user.id, ...memberIds.filter(id => id !== req.user.id)];
-    const convId = crypto.randomUUID();
-
-    await query(
-      'INSERT INTO conversations (id, type, name, lat, lng, ward, district, province, street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [convId, 'group', name.trim(), lat || null, lng || null, ward || null, district || null, province || null, street || null]
-    );
-
-    const values = allIds.map(uid => `('${convId}', '${uid}')`).join(', ');
-    await query(`INSERT INTO conversation_members (conversation_id, user_id) VALUES ${values}`);
-
-    // Emit to all members that a new group was created
-    if (req.app?.get('io')) {
-      const io = req.app.get('io');
-      for (const uid of allIds) {
-        io.to(`user:${uid}`).emit('conversation:new', { id: convId });
-      }
-    }
-
-    res.json({ id: convId, name: name.trim(), type: 'group' });
-  } catch (err) {
-    console.error('[Group] Create error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // ─── Get nearby groups (by address + GPS proximity) ──
 router.get('/nearby-groups', authenticate, async (req, res) => {
   try {
@@ -141,8 +64,6 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
     // Get user's hometown (province) from profile
     const userProfile = await queryOne('SELECT hometown FROM users WHERE id = ?', [req.user.id]);
     const userProvince = userProfile?.hometown || null;
-
-    const { haversineDistance } = require('../utils/helpers.js');
 
     // Find groups user is NOT a member of (or soft-deleted)
     const candidateGroups = await query(`
@@ -222,6 +143,86 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
     res.json({ groups: result, radius });
   } catch (err) {
     console.error('[NearbyGroups] Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
+
+// Get single conversation detail
+router.get('/:id', authenticate, async (req, res) => {
+  try {
+    const conv = await queryOne('SELECT * FROM conversations WHERE id = ?', [req.params.id]);
+    if (!conv) return res.status(404).json({ error: 'Not found' });
+
+    const members = await query(`
+      SELECT u.id, u.name, u.avatar, u.bio, u.is_online, u.last_seen
+      FROM conversation_members cm
+      JOIN users u ON cm.user_id = u.id
+      WHERE cm.conversation_id = ?
+    `, [req.params.id]);
+
+    res.json({ ...conv, members });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Create conversation
+router.post('/', authenticate, async (req, res) => {
+  try {
+    const { userId: targetUserId } = req.body;
+    if (!targetUserId) return res.status(400).json({ error: 'userId required' });
+
+    const existing = await queryOne(`
+      SELECT c.id FROM conversations c
+      JOIN conversation_members cm1 ON c.id = cm1.conversation_id AND cm1.user_id = ?
+      JOIN conversation_members cm2 ON c.id = cm2.conversation_id AND cm2.user_id = ?
+      WHERE c.type = 'private'
+    `, [req.user.id, targetUserId]);
+    if (existing) return res.json({ id: existing.id });
+
+    const convId = crypto.randomUUID();
+    await query('INSERT INTO conversations (id, type) VALUES (?, ?)', [convId, 'private']);
+    await query('INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)',
+      [convId, req.user.id, convId, targetUserId]);
+    res.json({ id: convId });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Create group chat ─────────────────────
+router.post('/group', authenticate, async (req, res) => {
+  try {
+    const { name, memberIds, lat, lng, ward, district, province, street } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'Group name required' });
+    if (!memberIds || !Array.isArray(memberIds) || memberIds.length < 2) {
+      return res.status(400).json({ error: 'At least 2 other members required' });
+    }
+    // Include creator in members
+    const allIds = [req.user.id, ...memberIds.filter(id => id !== req.user.id)];
+    const convId = crypto.randomUUID();
+
+    await query(
+      'INSERT INTO conversations (id, type, name, lat, lng, ward, district, province, street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [convId, 'group', name.trim(), lat || null, lng || null, ward || null, district || null, province || null, street || null]
+    );
+
+    const values = allIds.map(uid => `('${convId}', '${uid}')`).join(', ');
+    await query(`INSERT INTO conversation_members (conversation_id, user_id) VALUES ${values}`);
+
+    // Emit to all members that a new group was created
+    if (req.app?.get('io')) {
+      const io = req.app.get('io');
+      for (const uid of allIds) {
+        io.to(`user:${uid}`).emit('conversation:new', { id: convId });
+      }
+    }
+
+    res.json({ id: convId, name: name.trim(), type: 'group' });
+  } catch (err) {
+    console.error('[Group] Create error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
