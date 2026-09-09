@@ -499,6 +499,7 @@ export default function ChatDetailScreen({ route, navigation }) {
       const isFailed = item.status === "failed";
       const isSending = item.status === "sending" || item.id?.startsWith("temp_");
       const isUploading = item.status === "uploading";
+      const showGroupSender = isGroup && !isMine;
 
       function openImageViewer() {
         // Collect ALL image messages in this conversation for swiping
@@ -587,8 +588,8 @@ export default function ChatDetailScreen({ route, navigation }) {
                   ) : (
                     {/* Show sender name for group text messages */}
                     <View>
-                      {isGroup && !isMine ? <Text style={styles.msgGroupSender}>{item.sender_name || "?"}</Text> : null}
-                      <Text style={[styles.msgText, isMine && { color: "#fff" }, isGroup && !isMine && { marginTop: 2 }]}>{item.content}</Text>
+                      {showGroupSender ? <Text style={styles.msgGroupSender}>{item.sender_name || "?"}</Text> : null}
+                      <Text style={[styles.msgText, isMine && { color: "#fff" }, showGroupSender && { marginTop: 2 }]}>{item.content}</Text>
                     </View>
                   )}
                   {/* Timestamp + status (only for single images; not shown inside album) */}
