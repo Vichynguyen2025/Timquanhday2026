@@ -87,10 +87,9 @@ function DetailMedia({ images }) {
 
 // ─── Comment Row ─────────────────────────────────
 function CommentRow({ comment, depth, flat, onReply, onDelete, onLike, formatTime }) {
-  const indent = depth > 0 ? 16 : 0;
+  const indent = depth > 0 ? 40 : 0;
   const avatarSize = depth === 0 ? 36 : 30;
   const fontSize = depth === 0 ? 15 : 14;
-  const bubblePad = depth === 0 ? 12 : 10;
   const isMine = comment.user_name === "Bạn" && !comment.is_temp;
   const liked = !!comment.is_liked;
   const likeCount = comment.like_count || 0;
@@ -111,7 +110,7 @@ function CommentRow({ comment, depth, flat, onReply, onDelete, onLike, formatTim
   }
 
   return (
-    <View style={{ marginBottom: depth === 0 ? 14 : 6 }}>
+    <View style={{ marginBottom: 12, paddingHorizontal: 16 }}>
       <View style={{ flexDirection: "row", gap: 10, marginLeft: indent }}>
         {depth > 0 ? (
           <View style={{ position: "absolute", left: -10, top: 0, bottom: 24, width: 2, backgroundColor: "#E4E6EB" }} />
@@ -124,14 +123,14 @@ function CommentRow({ comment, depth, flat, onReply, onDelete, onLike, formatTim
           )}
         </View>
         <View style={{ flex: 1 }}>
-          <View style={[styles.commentBubble, { padding: bubblePad }]}>
+          <View style={styles.commentBubble}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3, flexWrap: "wrap" }}>
               <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{comment.user_name || "Người dùng"}</Text>
               {parentName ? <Text style={styles.commentReplyTo}> → {parentName}</Text> : null}
             </View>
             <Text style={[styles.commentContent, { fontSize }]}>{comment.content}</Text>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, paddingHorizontal: 4, gap: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, paddingHorizontal: 0, gap: 14 }}>
             <TouchableOpacity onPress={() => onLike(comment)} style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
               <Ionicons name={liked ? "heart" : "heart-outline"} size={15} color={liked ? "#ED4956" : "#65676B"} />
               {likeCount > 0 ? <Text style={[styles.commentActionText, liked && { color: "#ED4956", fontWeight: "700" }]}>{likeCount}</Text> : null}
@@ -514,7 +513,7 @@ const styles = StyleSheet.create({
   // Comment components
   commentAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
   commentAvatarText: { fontSize: 13, fontWeight: "700", color: colors.primary },
-  commentBubble: { backgroundColor: "#F0F2F5", borderRadius: 18, padding: 12 },
+  commentBubble: { backgroundColor: "transparent", paddingVertical: 0, paddingHorizontal: 0 },
   commentName: { fontSize: 13, fontWeight: "700", color: "#000" },
   commentReplyTo: { fontSize: 12, color: "#65676B", marginLeft: 4, fontWeight: "500" },
   commentTime: { fontSize: 11, color: "#8A8D91" },
