@@ -180,6 +180,57 @@ function CommentThread({ root, flat, onReply, onDelete, onLike, formatTime }) {
 }
 
 // ─── MAIN SCREEN ─────────────────────────────────
+function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTime, togglePostLike, commentInputRef }) {
+  if (!post) return null;
+  return (
+    <View style={styles.postCard}>
+      <View style={styles.postHeader}>
+        <View style={styles.postAvatar}>
+          {authorAvatar ? (
+            <Image source={{ uri: authorAvatar }} style={styles.postAvatarImg} />
+          ) : (
+            <Text style={styles.postAvatarText}>{(authorName || "?")[0].toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.postUserName} numberOfLines={1}>{authorName}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
+            {post.location_name ? <Text style={styles.postLocation} numberOfLines={1}>{post.location_name}</Text> : null}
+            {dist ? <Text style={styles.postDistance}>📍 {dist}</Text> : null}
+          </View>
+        </View>
+        <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
+      </View>
+      {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
+      <DetailMedia images={media} />
+      <View style={styles.countsRow}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          <Ionicons name="heart" size={14} color="#ED4956" />
+          <Text style={styles.countsText}>{post.like_count || 0}</Text>
+        </View>
+        <Text style={styles.countsText}>{post.comment_count || 0} bình luận</Text>
+      </View>
+      <View style={styles.postActions}>
+        <TouchableOpacity onPress={togglePostLike} style={styles.postAction}>
+          <Ionicons name={post.is_liked ? "heart" : "heart-outline"} size={22} color={post.is_liked ? "#EF4444" : "#000"} />
+          <Text style={[styles.postActionText, post.is_liked && { color: "#EF4444" }]}>Thích</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => commentInputRef?.current?.focus()} style={styles.postAction}>
+          <Ionicons name="chatbubble-outline" size={21} color="#000" />
+          <Text style={styles.postActionText}>Bình luận</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.postAction}>
+          <Ionicons name="paper-plane-outline" size={21} color="#000" />
+          <Text style={styles.postActionText}>Chia sẻ</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.commentsHeader}>
+        <Text style={styles.commentsTitle}>Bình luận ({post.comment_count || 0})</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function PostDetailScreen({ route, navigation }) {
   const { postId, focusComment } = route.params || {};
   const insets = useSafeAreaInsets();
@@ -271,7 +322,7 @@ export default function PostDetailScreen({ route, navigation }) {
     const tempId = "temp_" + Date.now();
     const parentId = replyTo?.id || null;
     const payload = { content: text };
-    if (parentId) payload.parent_id = parentId;
+    if (parentId) payload.parentId = parentId;
 
     setComments(prev => [
       ...prev,
@@ -343,58 +394,6 @@ export default function PostDetailScreen({ route, navigation }) {
   const postCardEl = useMemo(() => (
     <PostCard post={post} user={user} authorName={authorName} authorAvatar={authorAvatar} media={media} dist={dist} formatTime={formatTime} togglePostLike={togglePostLike} commentInputRef={commentInputRef} />
   ), [post, user, authorName, authorAvatar, media, dist]);
-
-  // ─── Post Card component (separate = no re-render on commentText change) ──
-function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTime, togglePostLike, commentInputRef }) {
-  if (!post) return null;
-  return (
-    <View style={styles.postCard}>
-      <View style={styles.postHeader}>
-        <View style={styles.postAvatar}>
-          {authorAvatar ? (
-            <Image source={{ uri: authorAvatar }} style={styles.postAvatarImg} />
-          ) : (
-            <Text style={styles.postAvatarText}>{(authorName || "?")[0].toUpperCase()}</Text>
-          )}
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.postUserName} numberOfLines={1}>{authorName}</Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
-            {post.location_name ? <Text style={styles.postLocation} numberOfLines={1}>{post.location_name}</Text> : null}
-            {dist ? <Text style={styles.postDistance}>📍 {dist}</Text> : null}
-          </View>
-        </View>
-        <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
-      </View>
-      {post.content ? <Text style={styles.postContent}>{post.content}</Text> : null}
-      <DetailMedia images={media} />
-      <View style={styles.countsRow}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          <Ionicons name="heart" size={14} color="#ED4956" />
-          <Text style={styles.countsText}>{post.like_count || 0}</Text>
-        </View>
-        <Text style={styles.countsText}>{post.comment_count || 0} bình luận</Text>
-      </View>
-      <View style={styles.postActions}>
-        <TouchableOpacity onPress={togglePostLike} style={styles.postAction}>
-          <Ionicons name={post.is_liked ? "heart" : "heart-outline"} size={22} color={post.is_liked ? "#EF4444" : "#000"} />
-          <Text style={[styles.postActionText, post.is_liked && { color: "#EF4444" }]}>Thích</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => commentInputRef?.current?.focus()} style={styles.postAction}>
-          <Ionicons name="chatbubble-outline" size={21} color="#000" />
-          <Text style={styles.postActionText}>Bình luận</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.postAction}>
-          <Ionicons name="paper-plane-outline" size={21} color="#000" />
-          <Text style={styles.postActionText}>Chia sẻ</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.commentsHeader}>
-        <Text style={styles.commentsTitle}>Bình luận ({post.comment_count || 0})</Text>
-      </View>
-    </View>
-  );
-}
 
   return (
     <KeyboardAvoidingView
