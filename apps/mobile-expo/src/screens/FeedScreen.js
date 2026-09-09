@@ -47,12 +47,14 @@ function formatDistance(km) {
 // ─── Comment Row (single row renderer) ─────────────
 // Only 2 visual levels: root (depth 0) and reply (depth 1).
 // All replies — regardless of actual DB hierarchy depth — align at depth 1.
-function CommentRow({ comment, depth, flat, onReply, onDelete, formatTime }) {
+function CommentRow({ comment, depth, flat, onReply, onDelete, onLike, formatTime }) {
   const indent = depth > 0 ? 16 : 0;
-  const avatarSize = depth === 0 ? 32 : 28;
+  const avatarSize = depth === 0 ? 36 : 30;
   const fontSize = depth === 0 ? 15 : 14;
-  const bubblePad = depth === 0 ? 10 : 8;
+  const bubblePad = depth === 0 ? 12 : 10;
   const isMine = comment.user_name === "Bạn" && !comment.is_temp;
+  const liked = !!comment.is_liked;
+  const likeCount = comment.like_count || 0;
 
   let parentName = null;
   if (comment.parent_id) {
@@ -72,42 +74,44 @@ function CommentRow({ comment, depth, flat, onReply, onDelete, formatTime }) {
   }
 
   return (
-    <View style={{ marginBottom: depth === 0 ? 12 : 4 }}>
-      <View style={{ flexDirection: "row", gap: 8, marginLeft: indent }}>
+    <View style={{ marginBottom: depth === 0 ? 14 : 6 }}>
+      <View style={{ flexDirection: "row", gap: 10, marginLeft: indent }}>
         {depth > 0 ? (
-          <View style={{ position: "absolute", left: -8, top: 0, bottom: 20, width: 2, backgroundColor: "#E5E7EB" }} />
+          <View style={{ position: "absolute", left: -10, top: 0, bottom: 24, width: 2, backgroundColor: "#E4E6EB" }} />
         ) : null}
-        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }]}>
+        {/* Avatar */}
+        <View style={[styles.commentAvatar, { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2, borderWidth: 1.5, borderColor: "#fff", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1 }]}>
           {comment.user_avatar ? (
             <Image source={{ uri: comment.user_avatar }} style={{ width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 }} />
           ) : (
             <Text style={[styles.commentAvatarText, { fontSize: avatarSize * 0.4 }]}>{(comment.user_name || "?")[0].toUpperCase()}</Text>
           )}
         </View>
+        {/* Content */}
         <View style={{ flex: 1 }}>
+          {/* Bubble */}
           <View style={[styles.commentBubble, { padding: bubblePad }]}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2, flexWrap: "wrap" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 3, flexWrap: "wrap" }}>
               <Text style={[styles.commentName, { fontSize: fontSize - 1 }]}>{comment.user_name || "Người dùng"}</Text>
               {parentName ? <Text style={styles.commentReplyTo}> → {parentName}</Text> : null}
-              <Text style={styles.commentTime}>{formatTime(comment.created_at)}</Text>
             </View>
             <Text style={[styles.commentContent, { fontSize }]}>{comment.content}</Text>
           </View>
-          {/* Actions */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2, paddingHorizontal: 4 }}>
-            <Text style={styles.commentActionText}>❤️ 0</Text>
-            <Text style={styles.commentActionSep}>·</Text>
+          {/* Actions row */}
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, paddingHorizontal: 4, gap: 14 }}>
+            <TouchableOpacity onPress={() => onLike(comment)} style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+              <Ionicons name={liked ? "heart" : "heart-outline"} size={15} color={liked ? "#ED4956" : "#65676B"} />
+              {likeCount > 0 ? <Text style={[styles.commentActionText, liked && { color: "#ED4956", fontWeight: "700" }]}>{likeCount}</Text> : null}
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => onReply(comment)}>
               <Text style={styles.commentActionText}>Trả lời</Text>
             </TouchableOpacity>
             {isMine ? (
-              <>
-                <Text style={styles.commentActionSep}>·</Text>
-                <TouchableOpacity onPress={() => onDelete(comment.id)}>
-                  <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity onPress={() => onDelete(comment.id)}>
+                <Text style={[styles.commentActionText, { color: "#EF4444" }]}>Xóa</Text>
+              </TouchableOpacity>
             ) : null}
+            <Text style={[styles.commentTime, { marginLeft: "auto" }]}>{formatTime(comment.created_at)}</Text>
           </View>
         </View>
       </View>
@@ -130,7 +134,7 @@ function isDescendantOf(comment, rootId, flat) {
 }
 
 // ─── Comment Thread (root + all its replies flattened at depth 1) ──
-function CommentThread({ root, flat, onReply, onDelete, formatTime }) {
+function CommentThread({ root, flat, onReply, onDelete, onLike, formatTime }) {
   // All replies of this thread regardless of DB depth → rendered FLAT at depth 1
   const replies = flat
     .filter(c => c.parent_id != null && isDescendantOf(c, root.id, flat))
@@ -138,9 +142,9 @@ function CommentThread({ root, flat, onReply, onDelete, formatTime }) {
 
   return (
     <View>
-      <CommentRow comment={root} depth={0} flat={flat} onReply={onReply} onDelete={onDelete} formatTime={formatTime} />
+      <CommentRow comment={root} depth={0} flat={flat} onReply={onReply} onDelete={onDelete} onLike={onLike} formatTime={formatTime} />
       {replies.map(r => (
-        <CommentRow key={r.id} comment={r} depth={1} flat={flat} onReply={onReply} onDelete={onDelete} formatTime={formatTime} />
+        <CommentRow key={r.id} comment={r} depth={1} flat={flat} onReply={onReply} onDelete={onDelete} onLike={onLike} formatTime={formatTime} />
       ))}
     </View>
   );
@@ -427,6 +431,17 @@ export default function FeedScreen({ navigation }) {
     ]);
   }
 
+  async function toggleCommentLike(comment) {
+    try {
+      const res = await api.post("/posts/comments/" + comment.id + "/like");
+      const liked = res.data?.liked;
+      const likeCount = res.data?.like_count || 0;
+      setComments(prev => prev.map(c =>
+        c.id === comment.id ? { ...c, is_liked: liked, like_count: likeCount } : c
+      ));
+    } catch (e) {}
+  }
+
   // ─── Gallery ────────────────────────────────────
   function openGallery(images, index) {
     setGalleryImages(images); setGalleryIndex(index); setGalleryVisible(true);
@@ -672,7 +687,7 @@ export default function FeedScreen({ navigation }) {
                 data={comments.filter(c => c.parent_id == null)}
                 keyExtractor={(item) => item.id || item._id || `temp_${item.content}_${item.created_at}`}
                 style={{ flex: 1 }}
-                contentContainerStyle={{ padding: 16, paddingBottom: 8 }}
+                contentContainerStyle={{ padding: 12, paddingBottom: 8 }}
                 ListEmptyComponent={
                   <View style={{ alignItems: "center", marginTop: 30 }}>
                     <Ionicons name="chatbubbles-outline" size={40} color="#ccc" />
@@ -684,6 +699,7 @@ export default function FeedScreen({ navigation }) {
                     root={item}
                     flat={comments}
                     formatTime={formatTime}
+                    onLike={(c) => toggleCommentLike(c)}
                     onReply={(c) => { setReplyTo({ id: c.id, name: c.user_name || "Người dùng" }); if (commentInputRef.current) commentInputRef.current.focus(); }}
                     onDelete={deleteComment}
                   />
@@ -809,23 +825,23 @@ const styles = StyleSheet.create({
   galleryClose: { position: "absolute", top: 60, right: 20, zIndex: 10, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 20, padding: 8 },
   galleryCounter: { position: "absolute", top: 64, left: 20, zIndex: 10, color: "#fff", fontSize: 16, fontWeight: "600" },
   // Comment
-  commentSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1, maxHeight: "80%" },
-  commentHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#E5E5E5", alignSelf: "center", marginTop: 10, marginBottom: 8 },
-  commentHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
+  commentSheet: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, flex: 1, maxHeight: "92%" },
+  commentHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: "#D1D5DB", alignSelf: "center", marginTop: 10, marginBottom: 8 },
+  commentHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   commentHeaderTitle: { fontSize: 17, fontWeight: "700", color: "#000" },
   commentItem: { marginBottom: 6 },
   commentRow: { flexDirection: "row", gap: 8 },
-  commentAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
-  commentAvatarText: { fontSize: 12, fontWeight: "700", color: colors.primary },
-  commentBubble: { backgroundColor: "#F0F2F5", borderRadius: 16, padding: 10 },
-  commentName: { fontSize: 13, fontWeight: "600", color: "#000" },
-  commentReplyTo: { fontSize: 11, color: "#65676B", marginLeft: 4 },
-  commentTime: { fontSize: 10, color: "#8A8D91", marginLeft: 8 },
-  commentContent: { fontSize: 14, color: "#333", lineHeight: 18 },
-  commentActionText: { fontSize: 12, color: "#65676B", fontWeight: "500" },
+  commentAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
+  commentAvatarText: { fontSize: 13, fontWeight: "700", color: colors.primary },
+  commentBubble: { backgroundColor: "#F0F2F5", borderRadius: 18, padding: 12 },
+  commentName: { fontSize: 13, fontWeight: "700", color: "#000" },
+  commentReplyTo: { fontSize: 12, color: "#65676B", marginLeft: 4, fontWeight: "500" },
+  commentTime: { fontSize: 11, color: "#8A8D91" },
+  commentContent: { fontSize: 14, color: "#050505", lineHeight: 19 },
+  commentActionText: { fontSize: 12, color: "#65676B", fontWeight: "600" },
   commentActionSep: { fontSize: 12, color: "#D1D5DB" },
-  commentInputBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", backgroundColor: "#fff" },
-  commentInput: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 80, fontSize: 14, color: "#000" },
+  commentInputBar: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 0.5, borderTopColor: "#E5E5E5", backgroundColor: "#fff" },
+  commentInput: { flex: 1, backgroundColor: "#F0F2F5", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 80, fontSize: 14, color: "#000" },
   commentSend: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginLeft: 8 },
   replyIndicator: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 6, backgroundColor: "#F0F9FF", borderTopWidth: 0.5, borderTopColor: "#E5E5E5" },
   replyIndicatorText: { fontSize: 12, color: "#6B7280" },

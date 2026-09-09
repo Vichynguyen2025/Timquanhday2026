@@ -309,17 +309,22 @@ router.post('/:id/comments', authenticate, async (req, res) => {
   }
 });
 
-// ─── Get Comments ───────────────────────────────
+// ─── Get Comments (with like info) ───────────────
 router.get('/:id/comments', authenticate, async (req, res) => {
   try {
     const comments = await query(`
-      SELECT c.*, u.name as user_name, u.avatar as user_avatar
+      SELECT c.*, u.name as user_name, u.avatar as user_avatar,
+        (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id) as like_count,
+        (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id AND user_id = ?) as is_liked
       FROM post_comments c JOIN users u ON c.user_id = u.id
       WHERE c.post_id = ?
       ORDER BY c.created_at ASC
-    `, [req.params.id]);
+    `, [req.user.id, req.params.id]);
 
-    res.json(comments);
+    // Convert is_liked to boolean
+    const enriched = comments.map(c => ({ ...c, is_liked: c.is_liked > 0 }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });
   }
@@ -339,6 +344,36 @@ router.delete('/comments/:commentId', authenticate, async (req, res) => {
 
     res.json({ deleted: true });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Like / Unlike Comment ──────────────────────
+router.post('/comments/:commentId/like', authenticate, async (req, res) => {
+  try {
+    const comment = await queryOne('SELECT * FROM post_comments WHERE id = ?', [req.params.commentId]);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+
+    const existing = await queryOne('SELECT * FROM comment_likes WHERE comment_id = ? AND user_id = ?', [req.params.commentId, req.user.id]);
+    let liked;
+    if (existing) {
+      await query('DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?', [req.params.commentId, req.user.id]);
+      liked = false;
+    } else {
+      await query('INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)', [req.params.commentId, req.user.id]);
+      liked = true;
+    }
+
+    const likeCountRes = await queryOne('SELECT COUNT(*) as count FROM comment_likes WHERE comment_id = ?', [req.params.commentId]);
+    const likeCount = likeCountRes?.count || 0;
+
+    if (io) {
+      io.emit('comment:like', { commentId: req.params.commentId, userId: req.user.id, liked, like_count: likeCount });
+    }
+
+    res.json({ liked, like_count: likeCount });
+  } catch (err) {
+    console.error('[Comments] Like error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
