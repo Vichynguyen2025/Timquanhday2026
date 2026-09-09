@@ -173,7 +173,7 @@ function CommentThread({ root, flat, onReply, onDelete, onLike, formatTime }) {
     <View>
       <CommentRow comment={root} depth={0} flat={flat} onReply={onReply} onDelete={onDelete} onLike={onLike} formatTime={formatTime} />
       {replies.map(r => (
-        <CommentRow key={r.id} comment={r} depth={1} flat={flat} onReply={onReply} onDelete={onDelete} onLike={onLike} formatTime={formatTime} />
+        <CommentRow key={r.client_id || r.id} comment={r} depth={1} flat={flat} onReply={onReply} onDelete={onDelete} onLike={onLike} formatTime={formatTime} />
       ))}
     </View>
   );
@@ -259,7 +259,7 @@ export default function PostDetailScreen({ route, navigation }) {
 
     setComments(prev => [
       ...prev,
-      { id: tempId, content: text, user_name: "Bạn", is_temp: true, created_at: new Date().toISOString(), parent_id: parentId, is_liked: false, like_count: 0 },
+      { id: tempId, client_id: tempId, content: text, user_name: "Bạn", is_temp: true, created_at: new Date().toISOString(), parent_id: parentId, is_liked: false, like_count: 0 },
     ]);
     setReplyTo(null);
     setSending(true);
@@ -268,7 +268,7 @@ export default function PostDetailScreen({ route, navigation }) {
       const saved = res.data;
       setComments(prev => prev.map(c =>
         c.id === tempId
-          ? { ...c, ...saved, id: saved.id || c.id, parent_id: c.parent_id || saved.parent_id, is_temp: false, is_liked: false, like_count: 0 }
+          ? { ...c, ...saved, id: saved.id || c.id, client_id: c.client_id || tempId, parent_id: c.parent_id || saved.parent_id, is_temp: false, is_liked: false, like_count: 0 }
           : c
       ));
       setPost(prev => prev ? { ...prev, comment_count: (prev.comment_count || 0) + 1 } : prev);
@@ -406,7 +406,7 @@ export default function PostDetailScreen({ route, navigation }) {
         <FlatList
           ref={listRef}
           data={comments.filter(c => c.parent_id == null)}
-          keyExtractor={(item, i) => item.id || item._id || `temp_${i}`}
+          keyExtractor={(item) => item.client_id || item.id || `temp_${item.created_at}_${item.content}`}
           style={{ flex: 1 }}
           ListHeaderComponent={renderPostCard}
           contentContainerStyle={{ paddingBottom: 12 }}
