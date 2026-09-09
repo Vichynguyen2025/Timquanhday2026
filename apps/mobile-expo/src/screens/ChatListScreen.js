@@ -381,45 +381,71 @@ export default function ChatListScreen({ navigation }) {
 
   // ─── Render suggested group ──────────────
   const renderGroup = ({ item }) => {
-    // Label hiển thị theo cách khớp: GPS → khoảng cách; province → "Cùng tỉnh"; address → địa chỉ
+    // Match badge theo cách khớp: GPS → khoảng cách; province → tỉnh; recent → mới
     const matchLabel = item.match_type === 'province'
-      ? `📍 ${item.province}`
+      ? (item.province || 'Cùng tỉnh')
       : item.match_type === 'recent'
-        ? '🆕 Mới'
-        : (item.distance != null ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : (item.address_label || 'Đề xuất'));
-    const subLabel = item.address_label && item.address_label !== item.province
+        ? 'Mới tạo'
+        : (item.distance != null ? (item.distance < 1000 ? `${item.distance}m` : `${(item.distance / 1000).toFixed(1)}km`) : 'Gần bạn');
+    const badgeKind = item.match_type === 'province' ? 'province' : item.match_type === 'recent' ? 'recent' : 'gps';
+    const addrText = item.address_label && item.address_label !== item.province
       ? item.address_label
-      : (item.last_message?.substring(0, 30) || 'Tham gia nhóm');
+      : (item.last_message?.substring(0, 40) || 'Tham gia nhóm');
+    const memberCount = item.members?.length || 0;
     return (
       <TouchableOpacity
-        style={styles.onvItem}
+        style={[styles.grpCard, { marginBottom: 12 }]}
         activeOpacity={0.7}
         onPress={() => navigation.navigate("ChatDetail", { conversationId: item.id, name: item.name || "Nhóm", type: "group" })}
       >
-        <View style={styles.avatarWrap}>
-          <View style={[styles.avatar, { backgroundColor: "#F0FDF4" }]}>
-            <Ionicons name="people" size={24} color="#22C55E" />
+        {/* Row 1: avatar + name + badge */}
+        <View style={styles.grpTop}>
+          <View style={styles.grpAvatar}>
+            <Ionicons name="people" size={26} color="#2563EB" />
+            {memberCount > 0 ? (
+              <View style={styles.grpAvatarMiniStack}>
+                {item.members?.slice(0, 2).map(m => (
+                  <View key={`mini-${m.id}`} style={styles.grpAvatarMini}>
+                    {m.avatar ? (
+                      <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={styles.grpAvatarMiniImg} />
+                    ) : (
+                      <Text style={{ fontSize: 8, fontWeight: "700", color: "#2563EB" }}>{(m.name || "?")[0]}</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.grpInfo}>
+            <Text style={styles.grpName} numberOfLines={1}>{item.name || "Nhóm"}</Text>
+            <View style={styles.grpAddrRow}>
+              <Ionicons name="location" size={12} color={badgeKind === 'gps' ? "#2563EB" : badgeKind === 'province' ? "#16A34A" : "#EA580C"} />
+              <Text style={styles.grpAddr} numberOfLines={1}>{addrText}</Text>
+            </View>
+          </View>
+          <View style={[styles.grpBadge, badgeKind === 'gps' ? styles.grpBadgeGps : badgeKind === 'province' ? styles.grpBadgeProvince : styles.grpBadgeRecent]}>
+            <Text style={[styles.grpBadgeText, badgeKind === 'gps' ? styles.grpBadgeTextGps : badgeKind === 'province' ? styles.grpBadgeTextProvince : styles.grpBadgeTextRecent]}>{matchLabel}</Text>
           </View>
         </View>
-        <View style={styles.convInfo}>
-          <View style={styles.convTop}>
-            <Text style={styles.convName} numberOfLines={1}>{item.name || "Nhóm"}</Text>
-            <Text style={{ fontSize: 11, color: "#22C55E", fontWeight: "600" }}>{matchLabel}</Text>
+        {/* Row 2: member stack + footer */}
+        <View style={styles.grpBottom}>
+          <View style={styles.grpMembersRow}>
+            {item.members?.slice(0, 4).map(m => (
+              <View key={m.id} style={styles.grpMemberDot}>
+                {m.avatar ? (
+                  <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={styles.grpMemberDotImg} />
+                ) : (
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: "#2563EB" }}>{(m.name || "?")[0]}</Text>
+                )}
+              </View>
+            ))}
+            <Text style={styles.grpMembersText}>{memberCount > 0 ? `${memberCount} thành viên` : 'Nhóm mới'}</Text>
+            {item.last_message_at ? <Text style={styles.grpDot} /> : null}
+            {item.last_message ? <Text style={styles.grpLastMsg} numberOfLines={1}>{item.last_message?.substring(0, 30)}</Text> : null}
           </View>
-          <View style={styles.convBottom}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 2, flex: 1 }}>
-              {item.members?.slice(0, 3).map(m => (
-                <View key={m.id} style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#DBEAFE", alignItems: "center", justifyContent: "center", marginRight: -4 }}>
-                  {m.avatar ? (
-                    <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={{ width: 20, height: 20, borderRadius: 10 }} />
-                  ) : (
-                    <Text style={{ fontSize: 9, fontWeight: "700", color: colors.primary }}>{(m.name || "?")[0]}</Text>
-                  )}
-                </View>
-              ))}
-              {item.members?.length > 3 && <Text style={{ fontSize: 10, color: "#9CA3AF" }}>+{item.members.length - 3}</Text>}
-              <Text style={[styles.convLast, { color: "#6B7280" }]} numberOfLines={1}>  {subLabel}</Text>
-            </View>
+          <View style={styles.grpJoinBtn}>
+            <Text style={styles.grpJoinText}>Tham gia</Text>
+            <Ionicons name="arrow-forward" size={13} color="#fff" />
           </View>
         </View>
       </TouchableOpacity>
@@ -827,4 +853,75 @@ const styles = StyleSheet.create({
     alignItems:"center", justifyContent:"center", paddingHorizontal:6, marginLeft:8,
   },
   unreadText:{ color:"#fff", fontSize:11,fontWeight:"700" },
+
+  // ─── Suggested group card (2026 mobile design) ──
+  grpCard: {
+    marginHorizontal: 16,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 16,
+    // Three-layer Airbnb-style shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.02,
+    shadowRadius: 0,
+    elevation: 1,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.04)",
+  },
+  grpTop: { flexDirection: "row", alignItems: "center" },
+  grpAvatar: {
+    width: 52, height: 52, borderRadius: 16,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center", justifyContent: "center",
+    position: "relative",
+  },
+  grpAvatarMiniStack: {
+    position: "absolute", bottom: -2, right: -2,
+    flexDirection: "row",
+  },
+  grpAvatarMini: {
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: "#DBEAFE",
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1.5, borderColor: "#fff",
+    marginLeft: -6,
+  },
+  grpAvatarMiniImg: { width: 18, height: 18, borderRadius: 9 },
+  grpInfo: { flex: 1, marginLeft: 12 },
+  grpName: { fontSize: 16, fontWeight: "600", color: "#222222", letterSpacing: -0.18 },
+  grpAddrRow: { flexDirection: "row", alignItems: "center", marginTop: 3, gap: 3 },
+  grpAddr: { fontSize: 13, color: "#6A6A6A", flex: 1, lineHeight: 17 },
+  // Match badge
+  grpBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, marginLeft: 8 },
+  grpBadgeGps: { backgroundColor: "#EFF6FF" },
+  grpBadgeProvince: { backgroundColor: "#F0FDF4" },
+  grpBadgeRecent: { backgroundColor: "#FFF7ED" },
+  grpBadgeText: { fontSize: 11, fontWeight: "600", letterSpacing: 0.1 },
+  grpBadgeTextGps: { color: "#2563EB" },
+  grpBadgeTextProvince: { color: "#16A34A" },
+  grpBadgeTextRecent: { color: "#EA580C" },
+  // Bottom row
+  grpBottom: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginTop: 12, paddingTop: 12,
+    borderTopWidth: 0.5, borderTopColor: "rgba(0,0,0,0.06)",
+  },
+  grpMembersRow: { flexDirection: "row", alignItems: "center", flex: 1 },
+  grpMemberDot: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "#DBEAFE",
+    alignItems: "center", justifyContent: "center",
+    marginRight: -6, borderWidth: 1.5, borderColor: "#fff",
+  },
+  grpMemberDotImg: { width: 22, height: 22, borderRadius: 11 },
+  grpMembersText: { fontSize: 12, color: "#6A6A6A", fontWeight: "500", marginLeft: 10 },
+  grpDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: "#D1D5DB", marginHorizontal: 6 },
+  grpLastMsg: { fontSize: 12, color: "#9CA3AF", flex: 1, marginLeft: 2 },
+  grpJoinBtn: {
+    flexDirection: "row", alignItems: "center", gap: 3,
+    backgroundColor: "#2563EB", paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 10,
+  },
+  grpJoinText: { fontSize: 12, fontWeight: "600", color: "#fff" },
 });
