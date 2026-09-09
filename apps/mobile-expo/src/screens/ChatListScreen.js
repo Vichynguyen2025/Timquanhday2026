@@ -15,30 +15,8 @@ import { vi } from "date-fns/locale";
 const API_BASE = "https://timquanhday.de";
 const GROUP_RADII = [100, 200, 500];
 
-// ─── Vietnam provinces (same list as EditProfile) ──
-const VIETNAM_PROVINCES = [
-  'An Giang', 'Bà Rịa - Vũng Tàu', 'Bạc Liêu', 'Bắc Giang', 'Bắc Kạn',
-  'Bắc Ninh', 'Bến Tre', 'Bình Dương', 'Bình Định', 'Bình Phước',
-  'Bình Thuận', 'Cà Mau', 'Cao Bằng', 'Cần Thơ', 'Đà Nẵng',
-  'Đắk Lắk', 'Đắk Nông', 'Điện Biên', 'Đồng Nai', 'Đồng Tháp',
-  'Gia Lai', 'Hà Giang', 'Hà Nam', 'Hà Nội', 'Hà Tĩnh',
-  'Hải Dương', 'Hải Phòng', 'Hậu Giang', 'Hòa Bình', 'TP. Hồ Chí Minh',
-  'Hưng Yên', 'Khánh Hòa', 'Kiên Giang', 'Kon Tum', 'Lai Châu',
-  'Lạng Sơn', 'Lào Cai', 'Lâm Đồng', 'Long An', 'Nam Định',
-  'Nghệ An', 'Ninh Bình', 'Ninh Thuận', 'Phú Thọ', 'Phú Yên',
-  'Quảng Bình', 'Quảng Nam', 'Quảng Ngãi', 'Quảng Ninh', 'Quảng Trị',
-  'Sóc Trăng', 'Sơn La', 'Tây Ninh', 'Thái Bình', 'Thái Nguyên',
-  'Thanh Hóa', 'Thừa Thiên Huế', 'Tiền Giang', 'Trà Vinh', 'Tuyên Quang',
-  'Vĩnh Long', 'Vĩnh Phúc', 'Yên Bái',
-];
-
-const GROUP_DISTRICTS = [
-  'Quận 1', 'Quận 2', 'Quận 3', 'Quận 4', 'Quận 5', 'Quận 6',
-  'Quận 7', 'Quận 8', 'Quận 9', 'Quận 10', 'Quận 11', 'Quận 12',
-  'Bình Tân', 'Bình Thạnh', 'Gò Vấp', 'Phú Nhuận', 'Tân Bình',
-  'Tân Phú', 'Thủ Đức', 'Củ Chi', 'Hóc Môn', 'Bình Chánh',
-  'Nhà Bè', 'Cần Giờ',
-];
+// ─── Vietnam address data (real provinces/districts/wards) ──
+import { VIETNAM_PROVINCES, DISTRICTS_BY_PROVINCE, WARDS_BY_DISTRICT } from "../data/vietnam_address";
 
 // ─── Address Picker Modal (table list, like EditProfile) ──
 function AddressPickerModal({ visible, title, data, value, onSelect, onClose }) {
@@ -118,7 +96,11 @@ export default function ChatListScreen({ navigation }) {
   const [groupDistrict, setGroupDistrict] = useState("");
   const [groupProvince, setGroupProvince] = useState("");
   const [groupStreet, setGroupStreet] = useState("");
-  const [groupPicker, setGroupPicker] = useState(null); // 'province' | 'district'
+  const [groupPicker, setGroupPicker] = useState(null); // 'province' | 'district' | 'ward'
+
+  // Derived: filtered districts for selected province, ward list for selected district
+  const addressDistricts = groupProvince ? (DISTRICTS_BY_PROVINCE[groupProvince] || []) : [];
+  const addressWards = groupDistrict ? (WARDS_BY_DISTRICT[groupDistrict] || []) : [];
 
   // ─── Suggested groups ────────────────────
   const [nearbyGroups, setNearbyGroups] = useState([]);
@@ -625,7 +607,7 @@ export default function ChatListScreen({ navigation }) {
               {/* ─── Địa chỉ nhóm (hiển thị trong Đề xuất) ── */}
               <Text style={[sModal.sectionTitle, { marginTop: 12 }]}><Ionicons name="location" size={12} color="#EF4444" />  Địa chỉ nhóm</Text>
               <View style={{ paddingHorizontal: 16, gap: 8, marginBottom: 12 }}>
-                {/* Tỉnh / Thành phố — picker */}
+                {/* Tỉnh / Thành phố — picker cascade */}
                 <TouchableOpacity style={addrStyles.pickerRow} onPress={() => setGroupPicker('province')} activeOpacity={0.7}>
                   <Ionicons name="map-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
                   <Text style={[addrStyles.pickerText, !groupProvince && addrStyles.pickerPlaceholder]}>
@@ -633,20 +615,30 @@ export default function ChatListScreen({ navigation }) {
                   </Text>
                   <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
                 </TouchableOpacity>
-                {/* Quận / Huyện — picker */}
-                <TouchableOpacity style={addrStyles.pickerRow} onPress={() => setGroupPicker('district')} activeOpacity={0.7}>
+                {/* Quận / Huyện — picker cascade, chỉ hiển thị quận của tỉnh đã chọn */}
+                <TouchableOpacity style={[addrStyles.pickerRow, !groupProvince && addrStyles.pickerDisabled]} onPress={() => groupProvince && setGroupPicker('district')} activeOpacity={0.7}>
                   <Ionicons name="location-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
                   <Text style={[addrStyles.pickerText, !groupDistrict && addrStyles.pickerPlaceholder]}>
-                    {groupDistrict || 'Chọn Quận / Huyện'}
+                    {groupDistrict || (groupProvince ? 'Chọn Quận / Huyện' : 'Chọn tỉnh/thành trước')}
                   </Text>
                   <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
                 </TouchableOpacity>
-                {/* Phường / Xã — text input */}
-                <View style={addrStyles.inputRow}>
-                  <Ionicons name="business-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
-                  <TextInput style={addrStyles.input} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} />
-                </View>
-                {/* Số nhà, tên đường — text input */}
+                {/* Phường / Xã — picker cascade nếu có dữ liệu, ngược lại nhập tay */}
+                {addressWards.length > 0 ? (
+                  <TouchableOpacity style={[addrStyles.pickerRow, !groupDistrict && addrStyles.pickerDisabled]} onPress={() => groupDistrict && setGroupPicker('ward')} activeOpacity={0.7}>
+                    <Ionicons name="business-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
+                    <Text style={[addrStyles.pickerText, !groupWard && addrStyles.pickerPlaceholder]}>
+                      {groupWard || (groupDistrict ? 'Chọn Phường / Xã' : 'Chọn quận/huyện trước')}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color="#9CA3AF" />
+                  </TouchableOpacity>
+                ) : (
+                  <View style={addrStyles.inputRow}>
+                    <Ionicons name="business-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
+                    <TextInput style={addrStyles.input} placeholder="Phường / Xã" placeholderTextColor="#9CA3AF" value={groupWard} onChangeText={setGroupWard} editable={!!groupDistrict} />
+                  </View>
+                )}
+                {/* Địa chỉ chi tiết — tòa nhà, số nhà, đường */}
                 <View style={addrStyles.inputRow}>
                   <Ionicons name="home-outline" size={16} color="#6B7280" style={{ marginRight: 8 }} />
                   <TextInput style={addrStyles.input} placeholder="Tòa nhà, địa chỉ chi tiết hoặc số trên đường" placeholderTextColor="#9CA3AF" value={groupStreet} onChangeText={setGroupStreet} />
@@ -657,21 +649,29 @@ export default function ChatListScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* ─── Address Picker Modals (province/district) ── */}
+      {/* ─── Address Picker Modals (cascade: province → district → ward) ── */}
       <AddressPickerModal
         visible={groupPicker === 'province'}
         title="Chọn Tỉnh / Thành phố"
         data={VIETNAM_PROVINCES}
         value={groupProvince}
-        onSelect={setGroupProvince}
+        onSelect={(v) => { setGroupProvince(v); setGroupDistrict(""); setGroupWard(""); }}
         onClose={() => setGroupPicker(null)}
       />
       <AddressPickerModal
         visible={groupPicker === 'district'}
         title="Chọn Quận / Huyện"
-        data={GROUP_DISTRICTS}
+        data={addressDistricts}
         value={groupDistrict}
-        onSelect={setGroupDistrict}
+        onSelect={(v) => { setGroupDistrict(v); setGroupWard(""); }}
+        onClose={() => setGroupPicker(null)}
+      />
+      <AddressPickerModal
+        visible={groupPicker === 'ward'}
+        title="Chọn Phường / Xã"
+        data={addressWards}
+        value={groupWard}
+        onSelect={setGroupWard}
         onClose={() => setGroupPicker(null)}
       />
       
@@ -728,6 +728,7 @@ const sModal = StyleSheet.create({
       borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB",
       paddingHorizontal: 12, height: 44,
     },
+    pickerDisabled: { opacity: 0.5 },
     pickerText: { flex: 1, fontSize: 14, color: "#111827" },
     pickerPlaceholder: { color: "#9CA3AF" },
     inputRow: {
