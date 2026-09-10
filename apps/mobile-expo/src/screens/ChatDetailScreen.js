@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Modal, Alert, Keyboard, ScrollView } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, Image, ActivityIndicator, Modal, Alert, Keyboard, ScrollView, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const EMOJIS = ["👍", "❤️", "🔥", "😂", "😍", "🎉", "💯", "✨", "🚀", "🙌", "👏", "😢", "😡", "💪", "🤝"];
+const SCREEN_WIDTH = Dimensions.get("window").width;
 
 export default function ChatDetailScreen({ route, navigation }) {
   const { conversationId, name, type } = route.params;
@@ -1076,11 +1077,11 @@ export default function ChatDetailScreen({ route, navigation }) {
               data={viewerImages}
               horizontal pagingEnabled showsHorizontalScrollIndicator={false}
               initialScrollIndex={viewerIndex}
-              getItemLayout={(_, index) => ({ length: 400, offset: 400 * index, index })}
+              getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
               keyExtractor={(_, i) => String(i)}
               renderItem={({ item }) => (
-                <View style={{ width: "100%", height: "100%", justifyContent: "center", alignItems: "center" }}>
-                  <Image source={{ uri: item }} style={{ width: "100%", height: "80%" }} resizeMode="contain" />
+                <View style={{ width: SCREEN_WIDTH, height: "100%", justifyContent: "center", alignItems: "center" }}>
+                  <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: SCREEN_WIDTH }} resizeMode="contain" />
                 </View>
               )}
             />
