@@ -528,13 +528,21 @@ export default function FeedScreen({ navigation }) {
       <TouchableOpacity style={styles.post} activeOpacity={0.95} onPress={() => openPostDetail(item, false)}>
         {/* Header */}
         <View style={styles.postHeader}>
-          <View style={styles.postAvatar}>
+          <TouchableOpacity
+            style={styles.postAvatar}
+            activeOpacity={0.7}
+            onPress={() => {
+              if (!isMyPost && item.user_id) {
+                navigation.navigate("UserProfile", { userId: item.user_id });
+              }
+            }}
+          >
             {authorAvatar ? (
               <Image source={{ uri: authorAvatar }} style={styles.postAvatarImg} />
             ) : (
               <Text style={styles.postAvatarText}>{(authorName || "?")[0].toUpperCase()}</Text>
-            )}
-          </View>
+                        )}
+                        </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.postUserName} numberOfLines={1}>{authorName}</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>

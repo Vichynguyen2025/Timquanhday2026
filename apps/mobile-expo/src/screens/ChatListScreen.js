@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Image, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Image, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform, Animated } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -76,6 +76,17 @@ export default function ChatListScreen({ navigation }) {
 
   // ─── Tab state ───────────────────────────
   const [tab, setTab] = useState("chats");
+
+  // Tab content fade-in transition
+  const tabAnim = useRef(new Animated.Value(1)).current;
+  function switchTab(next) {
+    if (next === tab) return;
+    Animated.timing(tabAnim, { toValue: 0, duration: 90, useNativeDriver: true }).start(() => {
+      setTab(next);
+      tabAnim.setValue(0);
+      Animated.timing(tabAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    });
+  }
 
   // Reset tab to chats on focus (handles back navigation from Explore)
   useFocusEffect(useCallback(() => {
@@ -156,10 +167,22 @@ export default function ChatListScreen({ navigation }) {
     };
     socket.on("conversation:new", onNewConv);
 
+    // Realtime group update (name/avatar/address) → sync suggested list
+    const onConvUpdated = ({ conversationId, name, avatar }) => {
+      setNearbyGroups(prev => prev.map(g =>
+        g.id === conversationId ? { ...g, name: name || g.name, avatar: avatar ? (avatar.startsWith("http") ? avatar : "https://timquanhday.de" + avatar) : g.avatar } : g
+      ));
+      setConversations(prev => prev.map(c =>
+        c.id === conversationId ? { ...c, name: name || c.name, avatar: avatar ? (avatar.startsWith("http") ? avatar : "https://timquanhday.de" + avatar) : c.avatar } : c
+      ));
+    };
+    socket.on("conversation:updated", onConvUpdated);
+
     return () => {
       socket.off("user:online", onOnline);
       socket.off("user:offline", onOffline);
       socket.off("conversation:new", onNewConv);
+      socket.off("conversation:updated", onConvUpdated);
     };
   }, [currentUserId]));
 
@@ -392,6 +415,8 @@ export default function ChatListScreen({ navigation }) {
       ? item.address_label
       : (item.last_message?.substring(0, 40) || 'Tham gia nhóm');
     const memberCount = item.members?.length || 0;
+    // Dedup members by id (prevent duplicate avatars)
+    const uniqueMembers = (item.members || []).filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i);
     return (
       <TouchableOpacity
         style={[styles.grpCard, { marginBottom: 12 }]}
@@ -404,7 +429,7 @@ export default function ChatListScreen({ navigation }) {
             <Ionicons name="people" size={26} color="#2563EB" />
             {memberCount > 0 ? (
               <View style={styles.grpAvatarMiniStack}>
-                {item.members?.slice(0, 2).map(m => (
+                {uniqueMembers.slice(0, 2).map(m => (
                   <View key={`mini-${m.id}`} style={styles.grpAvatarMini}>
                     {m.avatar ? (
                       <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={styles.grpAvatarMiniImg} />
@@ -430,7 +455,7 @@ export default function ChatListScreen({ navigation }) {
         {/* Row 2: member stack + footer */}
         <View style={styles.grpBottom}>
           <View style={styles.grpMembersRow}>
-            {item.members?.slice(0, 4).map(m => (
+            {uniqueMembers.slice(0, 4).map(m => (
               <View key={m.id} style={styles.grpMemberDot}>
                 {m.avatar ? (
                   <Image source={{ uri: m.avatar.startsWith("http") ? m.avatar : `https://timquanhday.de/uploads/${m.avatar}` }} style={styles.grpMemberDotImg} />
@@ -439,7 +464,7 @@ export default function ChatListScreen({ navigation }) {
                 )}
               </View>
             ))}
-            <Text style={styles.grpMembersText}>{memberCount > 0 ? `${memberCount} thành viên` : 'Nhóm mới'}</Text>
+            <Text style={styles.grpMembersText}>{uniqueMembers.length > 0 ? `${uniqueMembers.length} thành viên` : 'Nhóm mới'}</Text>
             {item.last_message_at ? <Text style={styles.grpDot} /> : null}
             {item.last_message ? <Text style={styles.grpLastMsg} numberOfLines={1}>{item.last_message?.substring(0, 30)}</Text> : null}
           </View>
@@ -472,7 +497,7 @@ export default function ChatListScreen({ navigation }) {
 
       {/* ─── Tab bar (3 tabs) ─────────────── */}
       <View style={styles.tabRow}>
-        <TouchableOpacity style={[styles.tab, tab === "chats" && styles.tabActive]} onPress={() => setTab("chats")}>
+        <TouchableOpacity style={[styles.tab, tab === "chats" && styles.tabActive]} onPress={() => switchTab("chats")}>
           <View style={[styles.tabIconWrap, tab === "chats" && styles.tabIconWrapActive]}>
             <Ionicons name="chatbubbles" size={16} color={tab === "chats" ? "#fff" : colors.primary} />
           </View>
@@ -484,7 +509,7 @@ export default function ChatListScreen({ navigation }) {
           </View>
           <Text style={[styles.tabLabel, tab === "explore" && styles.tabLabelActive]}>Khám phá</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, tab === "suggested" && styles.tabActive]} onPress={() => { setTab("suggested"); fetchNearbyGroups(); }}>
+        <TouchableOpacity style={[styles.tab, tab === "suggested" && styles.tabActive]} onPress={() => { switchTab("suggested"); fetchNearbyGroups(); }}>
           <View style={[styles.tabIconWrap, tab === "suggested" && styles.tabIconWrapActive]}>
             <Ionicons name="compass" size={16} color={tab === "suggested" ? "#fff" : "#F59E0B"} />
           </View>
@@ -523,6 +548,7 @@ export default function ChatListScreen({ navigation }) {
       )}
 
       {/* ─── Chats tab content ─────────────── */}
+      <Animated.View style={{ flex: 1, opacity: tabAnim }}>
       {tab === "chats" && (
         <>
           {loading ? (
@@ -577,6 +603,7 @@ export default function ChatListScreen({ navigation }) {
           )}
         </>
       )}
+      </Animated.View>
 
       {/* ─── Create Group Modal ───────────────────── */}
             <Modal visible={showCreateGroup} transparent animationType="slide" onRequestClose={() => setShowCreateGroup(false)}>
