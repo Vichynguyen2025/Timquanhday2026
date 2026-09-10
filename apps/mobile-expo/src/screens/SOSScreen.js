@@ -34,6 +34,14 @@ const URGENCIES = [
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
+// ─── Resolve avatar URL (handle relative paths) ──
+function resolveAvatar(url) {
+  if (!url) return null;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/uploads/")) return "https://timquanhday.de" + url;
+  return url;
+}
+
 function formatTime(d) {
   if (!d) return "";
   const diff = Date.now() - new Date(d).getTime();
@@ -108,7 +116,7 @@ function SOSCard({ item, onRespond, onPress, isOwner }) {
       <View style={styles.cardTop}>
         <View style={styles.cardAvatar}>
           {item.user_avatar ? (
-            <Image source={{ uri: item.user_avatar }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+            <Image source={{ uri: resolveAvatar(item.user_avatar) }} style={{ width: 36, height: 36, borderRadius: 18 }} />
           ) : (
             <Text style={styles.cardAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
           )}
@@ -357,8 +365,15 @@ export default function SOSScreen({ navigation }) {
     const onNew = (sos) => { setSosList(prev => { if (prev.find(s => s.id === sos.id)) return prev; return [sos, ...prev]; }); };
     const onUpdated = (sos) => { setSosList(prev => prev.map(s => s.id === sos.id ? sos : s)); setMySos(prev => prev.map(s => s.id === sos.id ? sos : s)); setHelpingSos(prev => prev.map(s => s.id === sos.id ? sos : s)); };
     const onCancelled = ({ sosId }) => { setSosList(prev => prev.filter(s => s.id !== sosId)); setMySos(prev => prev.filter(s => s.id !== sosId)); setHelpingSos(prev => prev.filter(s => s.id !== sosId)); };
-    socket.on("sos:new", onNew); socket.on("sos:updated", onUpdated); socket.on("sos:cancelled", onCancelled);
-    return () => { socket.off("sos:new", onNew); socket.off("sos:updated", onUpdated); socket.off("sos:cancelled", onCancelled); };
+    const onUserUpdated = (data) => {
+      // Sync avatar/name changes into SOS lists in realtime
+      const upd = (s) => s.user_id === data.id ? { ...s, user_name: data.name || s.user_name, user_avatar: data.avatar || s.user_avatar } : s;
+      setSosList(prev => prev.map(upd));
+      setMySos(prev => prev.map(upd));
+      setHelpingSos(prev => prev.map(upd));
+    };
+    socket.on("sos:new", onNew); socket.on("sos:updated", onUpdated); socket.on("sos:cancelled", onCancelled); socket.on("user:updated", onUserUpdated);
+    return () => { socket.off("sos:new", onNew); socket.off("sos:updated", onUpdated); socket.off("sos:cancelled", onCancelled); socket.off("user:updated", onUserUpdated); };
   }, [radius]));
 
   async function getLocation() {
@@ -584,6 +599,8 @@ export default function SOSScreen({ navigation }) {
             renderItem={({ item }) => {
               // Override with canonical AuthContext data for current user's SOS
               const sosItem = { ...item, user_name: user?.name || item.user_name, user_avatar: user?.avatar || item.user_avatar };
+              // Resolve avatar URL in case it's a relative path
+              if (sosItem.user_avatar) sosItem.user_avatar = resolveAvatar(sosItem.user_avatar);
               const hasPending = (sosItem.response_count || 0) > 0 && sosItem.status === 'MATCHING';
               return (
                 <View>

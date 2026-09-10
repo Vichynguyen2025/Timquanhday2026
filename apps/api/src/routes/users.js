@@ -62,6 +62,7 @@ router.patch('/me', authenticate, async (req, res) => {
     // Emit profile update event
     if (io) {
       io.to(`user:${req.user.id}`).emit('user:profile_updated', { userId: req.user.id, changes: user });
+      io.to(`user:${req.user.id}`).emit('user:updated', { id: req.user.id, name: user?.name, avatar: user?.avatar });
     }
     res.json(user);
   } catch (err) {
