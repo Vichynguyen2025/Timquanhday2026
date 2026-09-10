@@ -803,7 +803,11 @@ export default function SOSScreen({ navigation }) {
               renderItem={({ item }) => (
                 <View style={styles.providerCard}>
                   <View style={styles.providerAvatar}>
-                    <Text style={styles.providerAvatarText}>{(item.provider_name || "?")[0].toUpperCase()}</Text>
+                    {item.provider_avatar ? (
+                      <Image source={{ uri: resolveAvatar(item.provider_avatar) }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                    ) : (
+                      <Text style={styles.providerAvatarText}>{(item.provider_name || "?")[0].toUpperCase()}</Text>
+                    )}
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.providerName}>{item.provider_name || "Người dùng"}</Text>
