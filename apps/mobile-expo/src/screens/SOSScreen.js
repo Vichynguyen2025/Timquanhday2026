@@ -677,7 +677,11 @@ export default function SOSScreen({ navigation }) {
                   <View style={styles.helpingCard}>
                     <View style={styles.helpingCardTop}>
                       <View style={styles.helpingAvatar}>
-                        <Text style={styles.helpingAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+                        {item.user_avatar ? (
+                          <Image source={{ uri: resolveAvatar(item.user_avatar) }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                        ) : (
+                          <Text style={styles.helpingAvatarText}>{(item.user_name || "?")[0].toUpperCase()}</Text>
+                        )}
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.helpingUserName}>{item.user_name || "Người dùng"}</Text>
