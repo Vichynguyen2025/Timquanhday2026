@@ -85,24 +85,47 @@ router.get('/', authenticate, async (req, res) => {
     const radius = parseInt(req.query.radius || '500');
     const limit = Math.min(parseInt(req.query.limit || '20'), 50);
     const before = req.query.before || null;
+    // Filter by specific user (used by UserProfileScreen)
+    const targetUserId = req.query.userId || null;
+    // Filter: saved / liked (used by profile tabs)
+    const filter = req.query.filter || null;
 
     let conditions = [];
     let params = [req.user.id, req.user.id];
 
-    // If user has location, filter by radius
-    const userLoc = await query('SELECT lat, lng FROM user_locations WHERE user_id = ?', [req.user.id]);
-    let userIds = [req.user.id];
+    // If viewing a specific user's profile → only their posts
+    if (targetUserId) {
+      conditions.push('p.user_id = ?');
+      params.push(targetUserId);
+    } else {
+      // Otherwise normal feed: filter by radius
+      const userLoc = await query('SELECT lat, lng FROM user_locations WHERE user_id = ?', [req.user.id]);
+      let userIds = [req.user.id];
 
-    if (userLoc.length) {
-      const nearby = await getNearbyUsers(userLoc[0].lat, userLoc[0].lng, radius / 1000);
-      const nearbyIds = nearby.map(u => u.id);
-      userIds = [...new Set([...nearbyIds, req.user.id])];
+      if (userLoc.length) {
+        const nearby = await getNearbyUsers(userLoc[0].lat, userLoc[0].lng, radius / 1000);
+        const nearbyIds = nearby.map(u => u.id);
+        userIds = [...new Set([...nearbyIds, req.user.id])];
+      }
+
+      if (userIds.length > 0) {
+        const placeholders = userIds.map(() => '?').join(',');
+        conditions.push(`p.user_id IN (${placeholders})`);
+        params.push(...userIds);
+      }
     }
 
-    if (userIds.length > 0) {
-      const placeholders = userIds.map(() => '?').join(',');
-      conditions.push(`p.user_id IN (${placeholders})`);
-      params.push(...userIds);
+    // Saved filter — dùng targetUserId nếu có (xem profile người khác)
+    if (filter === 'saved') {
+      const filterUserId = targetUserId || req.user.id;
+      conditions.push('EXISTS (SELECT 1 FROM post_saves ps WHERE ps.post_id = p.id AND ps.user_id = ?)');
+      params.push(filterUserId);
+    }
+    // Liked filter
+    if (filter === 'liked') {
+      const filterUserId = targetUserId || req.user.id;
+      conditions.push('EXISTS (SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = ?)');
+      params.push(filterUserId);
     }
 
     if (before) {
@@ -131,7 +154,7 @@ router.get('/', authenticate, async (req, res) => {
       ...p,
       is_liked: p.is_liked > 0,
       is_saved: p.is_saved > 0,
-      distance: userLoc.length ? calculateDistance(userLoc[0].lat, userLoc[0].lng, p.lat, p.lng) : null,
+      distance: null,
     }));
 
     res.json({ posts: enriched, hasMore: posts.length >= limit });
