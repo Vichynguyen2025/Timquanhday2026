@@ -309,10 +309,42 @@ export default function PostDetailScreen({ route, navigation }) {
   }, [postId, user?.id]);
 
   // Scroll to comment when navigated from notification
-  const scrollToComment = useRef(false);
   useEffect(() => {
     if (focusComment && comments.length > 0) {
-      scrollToComment.current = true;
+      const rootC = comments.filter(c => c.parent_id == null);
+      const targetComment = comments.find(c => c.id === focusComment);
+      if (!targetComment) return;
+      let rootId = targetComment.parent_id;
+      let targetRoot = targetComment;
+      if (rootId) {
+        let parent = comments.find(c => c.id === rootId);
+        while (parent && parent.parent_id) {
+          parent = comments.find(c => c.id === parent.parent_id);
+        }
+        if (parent) targetRoot = parent;
+      }
+      const idx = rootC.findIndex(c => c.id === targetRoot.id);
+      if (idx < 0) return;
+      // Scroll with retry — FlatList needs items measured first
+      const tryScroll = (attempt = 0) => {
+        if (attempt > 8) return;
+        try {
+          listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.1 });
+        } catch {
+          setTimeout(() => tryScroll(attempt + 1), 400);
+        }
+      };
+      setTimeout(() => {
+        commentInputRef.current?.focus();
+        tryScroll();
+      }, 150);
+    }
+  }, [focusComment, comments]);
+
+  // Fallback: onContentSizeChange also triggers a scroll
+  const scrolledIdx = useRef(-1);
+  useEffect(() => {
+    if (focusComment && comments.length > 0) {
       const rootC = comments.filter(c => c.parent_id == null);
       const targetComment = comments.find(c => c.id === focusComment);
       if (!targetComment) return;
@@ -326,13 +358,9 @@ export default function PostDetailScreen({ route, navigation }) {
         if (parent) targetRoot = parent;
       }
       scrolledIdx.current = rootC.findIndex(c => c.id === targetRoot.id);
-      // Focus input after a short delay
-      setTimeout(() => commentInputRef.current?.focus(), 400);
     }
   }, [focusComment, comments]);
 
-  // Track scroll index to use onContentSizeChange
-  const scrolledIdx = useRef(-1);
   const onContentChanged = () => {
     if (scrolledIdx.current >= 0) {
       try {
