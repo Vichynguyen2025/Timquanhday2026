@@ -54,14 +54,13 @@ export default function ChatDetailScreen({ route, navigation }) {
   const [viewerImages, setViewerImages] = useState([]);
   const [viewerIndex, setViewerIndex] = useState(0);
 
-  // ─── Voice call state
+  // Voice call state
   const [callState, setCallState] = useState(null);
   const [callerId, setCallerId] = useState(null);
   const [callerName, setCallerName] = useState('');
   const [callDuration, setCallDuration] = useState(0);
   const callTimerRef = useRef(null);
-
-    const [convMembers, setConvMembers] = useState([]);
+  const [convMembers, setConvMembers] = useState([]);
   const [deletedMessages, setDeletedMessages] = useState(new Set());
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
@@ -70,7 +69,7 @@ export default function ChatDetailScreen({ route, navigation }) {
   const isOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : (otherUser?.is_online === 1);
   const isBlocked = blockStatus === 'blocked_by_me' || blockStatus === 'blocked_by_them';
 
-  // ─── Voice call ──────────────────────────────────
+  // Voice call
   function cleanupCall() {
     if (callTimerRef.current) clearInterval(callTimerRef.current);
     callTimerRef.current = null;
@@ -79,9 +78,9 @@ export default function ChatDetailScreen({ route, navigation }) {
   function startVoiceCall() {
     if (!otherUser?.id) return;
     setCallState('calling');
-    setCallerName(otherUser.name || name || 'Người dùng');
+    setCallerName(otherUser.name || name || 'Ng\u01b0\u1eddi d\u00f9ng');
     const s = getSocket();
-    if (s && s.connected) s.emit('call:offer', { targetUserId: otherUser.id, conversationId, callerName: (user?.name || 'Người dùng') });
+    if (s && s.connected) s.emit('call:offer', { targetUserId: otherUser.id, conversationId, callerName: (user?.name || 'Ng\u01b0\u1eddi d\u00f9ng') });
   }
   function acceptCall() {
     const s = getSocket();
@@ -102,46 +101,6 @@ export default function ChatDetailScreen({ route, navigation }) {
   function formatDuration(sec) {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-
-
-
-  function acceptCall() {
-    const s = getSocket();
-    if (s && s.connected) {
-      s.emit('call:accept', { callerId });
-    }
-    setCallState('active');
-    callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000);
-  }
-
-  function rejectCall() {
-    const s = getSocket();
-    if (s && s.connected && callerId) {
-      s.emit('call:reject', { callerId });
-    }
-    cleanupCall();
-  }
-
-  function endCall() {
-    const s = getSocket();
-    if (s && s.connected && otherUser?.id) {
-      s.emit('call:end', { targetUserId: otherUser.id });
-    }
-    cleanupCall();
-  }
-
-  function formatDuration(sec) {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-
-  function formatLastSeen(d) {
-    if (!d) return "";
-    const diff = Date.now() - new Date(d).getTime();
-    if (diff < 60000) return "Vừa xong";
     if (diff < 3600000) return `${Math.floor(diff / 60000)} phút trước`;
     if (diff < 86400000) return `${Math.floor(diff / 3600000)} giờ trước`;
     const days = Math.floor(diff / 86400000);
@@ -231,18 +190,6 @@ export default function ChatDetailScreen({ route, navigation }) {
         if (cId2 === conversationId && !isGroup) {
           setCallerId(cId);
           setCallerName(callerName);
-          setCallState('incoming');
-        }
-      });
-      socket.on('call:connected', () => {
-        setCallState('active');
-        callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000);
-      });
-      socket.on('call:rejected', () => { cleanupCall(); });
-      socket.on('call:ended', () => { cleanupCall(); });
-      socket.on('call:busy', () => { cleanupCall(); });
-return () => {
-        // Clear active conversation for badge tracking
         setActiveConversation(null);
         showSub.remove();
         hideSub.remove();
@@ -250,6 +197,9 @@ return () => {
         socket.off("message:reaction", onReact); socket.off("user:typing", onType);
         socket.off("user:stop-typing", onStop);
         socket.off("conversation:updated");
+        socket.off('call:incoming'); socket.off('call:connected');
+        socket.off('call:rejected'); socket.off('call:ended');
+        socket.off('call:busy');
         socket.off('call:incoming'); socket.off('call:connected');
         socket.off('call:rejected'); socket.off('call:ended');
         socket.off('call:busy');
@@ -750,6 +700,11 @@ return () => {
             <Ionicons name="call" size={22} color="#22C55E" />
           </TouchableOpacity>
         )}
+        {!isGroup && otherUser?.id && (
+          <TouchableOpacity onPress={startVoiceCall} style={[styles.headerBtn, { marginRight: 4 }]}>
+            <Ionicons name="call" size={22} color="#22C55E" />
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={async () => {
           if (isGroup) {
             // Load group info
@@ -1121,7 +1076,40 @@ return () => {
             </View>
           </View>
         </TouchableOpacity>
-        </KeyboardAvoidingView>
+        {callState && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <TouchableOpacity style={styles.callOverlay} activeOpacity={1} onPress={() => {}}>
+              <View style={styles.callSheet}>
+                <Ionicons name={callState === "active" ? "call" : "call-outline"} size={48} color={callState === "active" ? "#22C55E" : "#fff"} />
+                <Text style={styles.callName}>{callState === "calling" ? (otherUser?.name || name || "Ng\u01b0\u1eddi d\u00f9ng") : callerName}</Text>
+                <Text style={styles.callStatus}>{callState === "calling" ? "\u0110ang g\u1ecdi..." : callState === "incoming" ? "Cu\u1ed9c g\u1ecdi \u0111\u1ebfn" : callState === "active" ? formatDuration(callDuration) : ""}</Text>
+                <View style={styles.callActions}>
+                  {callState === "incoming" && (
+                    <>
+                      <TouchableOpacity onPress={acceptCall} style={[styles.callBtn, { backgroundColor: "#22C55E" }]}>
+                        <Ionicons name="call" size={28} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={rejectCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
+                        <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {callState === "active" && (
+                    <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
+                      <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+                    </TouchableOpacity>
+                  )}
+                  {callState === "calling" && (
+                    <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
+                      <Ionicons name="close" size={28} color="#fff" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+      </KeyboardAvoidingView>
       </Modal>
 
       {/* ─── Group Rename Modal ──── */}
@@ -1184,52 +1172,9 @@ return () => {
                   <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: SCREEN_WIDTH }} resizeMode="contain" />
                 </View>
               )}
-            />
-          )}
-        </View>
-                </Modal>
-                  {callState && (
-          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-            <TouchableOpacity style={styles.callOverlay} activeOpacity={1} onPress={() => {}}>
-              <View style={styles.callSheet}>
-                <Ionicons name={callState === 'active' ? "call" : "call-outline"} size={48} color={callState === 'active' ? "#22C55E" : "#fff"} />
-                <Text style={styles.callName}>{callState === 'calling' ? (otherUser?.name || name || 'Người dùng') : callerName}</Text>
-                <Text style={styles.callStatus}>{callState === 'calling' ? "Đang gọi..." : callState === 'incoming' ? "Cuộc gọi đến" : callState === 'active' ? formatDuration(callDuration) : ""}</Text>
-                <View style={styles.callActions}>
-                  {callState === 'incoming' && (
-                    <>
-                      <TouchableOpacity onPress={acceptCall} style={[styles.callBtn, { backgroundColor: "#22C55E" }]}>
-                        <Ionicons name="call" size={28} color="#fff" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={rejectCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
-                        <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {callState === 'active' && (
-                    <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
-                      <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-                    </TouchableOpacity>
-                  )}
-                  {callState === 'calling' && (
-                    <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
-                      <Ionicons name="close" size={28} color="#fff" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
-          </View>
-        )}
-</KeyboardAvoidingView>
-    
-              {/* ─── Voice Call Overlay ──────────────── */}
-
           });
           }
 
-          // ─── Voice Call Styles ──────────────────
-          const callStyles = StyleSheet.create({
             callOverlay: {
               flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
               justifyContent: "center", alignItems: "center",
@@ -1239,20 +1184,6 @@ return () => {
             callStatus: { fontSize: 15, color: "#ccc" },
             callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
             callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
-          
-  // ─── Voice Call Styles
-  callOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center", alignItems: "center",
-  },
-  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
-  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
-  callStatus: { fontSize: 15, color: "#ccc" },
-  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
-  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
-});
-
-          const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   headerBack: { padding: 6 },
@@ -1347,4 +1278,15 @@ return () => {
   modalInfoText: { fontSize: 15, color: "#000", marginLeft: 12 },
   modalDone: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 10, backgroundColor: "#F0F2F5" },
   modalDoneText: { fontSize: 16, fontWeight: "600", color: colors.primary },
+
+  // Voice Call Styles
+  callOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center", alignItems: "center",
+  },
+  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
+  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
+  callStatus: { fontSize: 15, color: "#ccc" },
+  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
+  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
 });
