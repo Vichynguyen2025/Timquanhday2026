@@ -325,50 +325,15 @@ export default function PostDetailScreen({ route, navigation }) {
       }
       const idx = rootC.findIndex(c => c.id === targetRoot.id);
       if (idx < 0) return;
-      // Scroll with retry — FlatList needs items measured first
-      const tryScroll = (attempt = 0) => {
-        if (attempt > 8) return;
-        try {
-          listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.1 });
-        } catch {
-          setTimeout(() => tryScroll(attempt + 1), 400);
-        }
-      };
+      // Use scrollToOffset which doesn't need measured items
+      const ESTIMATED_ITEM_HEIGHT = 100;
+      const offset = idx * ESTIMATED_ITEM_HEIGHT;
       setTimeout(() => {
         commentInputRef.current?.focus();
-        tryScroll();
-      }, 150);
+        listRef.current?.scrollToOffset({ offset, animated: true });
+      }, 200);
     }
   }, [focusComment, comments]);
-
-  // Fallback: onContentSizeChange also triggers a scroll
-  const scrolledIdx = useRef(-1);
-  useEffect(() => {
-    if (focusComment && comments.length > 0) {
-      const rootC = comments.filter(c => c.parent_id == null);
-      const targetComment = comments.find(c => c.id === focusComment);
-      if (!targetComment) return;
-      let rootId = targetComment.parent_id;
-      let targetRoot = targetComment;
-      if (rootId) {
-        let parent = comments.find(c => c.id === rootId);
-        while (parent && parent.parent_id) {
-          parent = comments.find(c => c.id === parent.parent_id);
-        }
-        if (parent) targetRoot = parent;
-      }
-      scrolledIdx.current = rootC.findIndex(c => c.id === targetRoot.id);
-    }
-  }, [focusComment, comments]);
-
-  const onContentChanged = () => {
-    if (scrolledIdx.current >= 0) {
-      try {
-        listRef.current?.scrollToIndex({ index: scrolledIdx.current, animated: true, viewPosition: 0.1 });
-      } catch {}
-      scrolledIdx.current = -1;
-    }
-  };
 
   async function sendComment() {
     if (!commentText.trim() || !post) return;
@@ -475,7 +440,6 @@ export default function PostDetailScreen({ route, navigation }) {
           style={{ flex: 1 }}
           ListHeaderComponent={postCardEl}
           contentContainerStyle={{ paddingBottom: 12 }}
-          onContentSizeChange={onContentChanged}
           ListEmptyComponent={commentLoading ? (
             <View style={{ padding: 20, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
           ) : (
