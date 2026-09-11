@@ -651,7 +651,6 @@ export default function ChatDetailScreen({ route, navigation }) {
                               <Text style={styles.albumCountText}>{total} ảnh</Text>
                             </View>
                           );
-                        }
                         return null;
                       })()}
                     </View>
@@ -700,6 +699,7 @@ export default function ChatDetailScreen({ route, navigation }) {
     };
 
   return (
+    <>
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
