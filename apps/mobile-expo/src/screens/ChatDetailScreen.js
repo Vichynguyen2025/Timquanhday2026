@@ -1182,19 +1182,15 @@ export default function ChatDetailScreen({ route, navigation }) {
                   <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: SCREEN_WIDTH }} resizeMode="contain" />
                 </View>
               )}
-          });
-          }
+          />
+          )}
+        </View>
+      </Modal>
+    </KeyboardAvoidingView>
+  );
+}
 
-            callOverlay: {
-              flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
-              justifyContent: "center", alignItems: "center",
-            },
-            callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
-            callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
-            callStatus: { fontSize: 15, color: "#ccc" },
-            callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
-            callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
-  container: { flex: 1, backgroundColor: "#fff" },
+const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   headerBack: { padding: 6 },
   headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginLeft: 4 },
