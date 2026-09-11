@@ -545,7 +545,18 @@ export default function ChatDetailScreen({ route, navigation }) {
           } else {
             setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
           }
-        });
+    
+  // ─── Voice Call Styles ──────────────────
+  callOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center", alignItems: "center",
+  },
+  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
+  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
+  callStatus: { fontSize: 15, color: "#ccc" },
+  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
+  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
+    });
       }
     } catch (e) {}
     setUploading(false);
@@ -1144,20 +1155,7 @@ export default function ChatDetailScreen({ route, navigation }) {
     );
     }
 
-    // ─── Voice Call Styles ──────────────────
-    const callStyles = StyleSheet.create({
-      callOverlay: {
-        flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
-        justifyContent: "center", alignItems: "center",
-      },
-      callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
-      callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
-      callStatus: { fontSize: 15, color: "#ccc" },
-      callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
-      callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
-    });
-
-    const styles = StyleSheet.create({
+  const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   headerBack: { padding: 6 },
