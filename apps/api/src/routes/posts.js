@@ -257,7 +257,7 @@ router.post('/:id/like', authenticate, async (req, res) => {
       await query('INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)', [req.params.id, req.user.id]);
       await query('UPDATE posts SET like_count = COALESCE(like_count, 0) + 1 WHERE id = ?', [req.params.id]);
       if (post.user_id !== req.user.id) {
-        await createNotification(post.user_id, 'like', 'Thích bài viết', `${req.user.name || 'Ai đó'} đã thích bài viết của bạn`, { postId: req.params.id, postContent: post.content?.substring(0, 200), postMedia: post.media });
+        await createNotification(post.user_id, 'like', 'Thích bài viết', `${req.user.name || 'Ai đó'} đã thích bài viết của bạn`, { postId: req.params.id, postContent: post.content?.substring(0, 200), postMedia: post.media }, req.user.id);
       }
       liked = true;
     }
@@ -311,7 +311,7 @@ router.post('/:id/comments', authenticate, async (req, res) => {
     );
 
     if (post.user_id !== req.user.id) {
-      await createNotification(post.user_id, 'comment', 'Bình luận', `${req.user.name || 'Ai đó'} đã bình luận bài viết của bạn`, { postId: req.params.id, commentId, commentContent: content, postContent: post.content?.substring(0, 200), postMedia: post.media });
+      await createNotification(post.user_id, 'comment', 'Bình luận', `${req.user.name || 'Ai đó'} đã bình luận bài viết của bạn`, { postId: req.params.id, commentId, commentContent: content, postContent: post.content?.substring(0, 200), postMedia: post.media }, req.user.id);
     }
 
     // Update post counts

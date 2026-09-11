@@ -30,10 +30,10 @@ export async function getNearbyUsers(lat, lng, radiusKm, excludeUserId = null) {
     .sort((a, b) => a.distance - b.distance);
 }
 
-export async function createNotification(userId, type, title, body, data = null) {
+export async function createNotification(userId, type, title, body, data = null, actorId = null) {
   const result = await query(
-    'INSERT INTO notifications (user_id, type, title, body, data) VALUES (?, ?, ?, ?, ?)',
-    [userId, type, title, body, data ? JSON.stringify(data) : null]
+    'INSERT INTO notifications (user_id, type, title, body, data, actor_id) VALUES (?, ?, ?, ?, ?, ?)',
+    [userId, type, title, body, data ? JSON.stringify(data) : null, actorId]
   );
   return result.insertId;
 }
