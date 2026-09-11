@@ -224,9 +224,6 @@ function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTim
           <Text style={styles.postActionText}>Chia sẻ</Text>
         </TouchableOpacity>
       </View>
-      <View style={styles.commentsHeader}>
-        <Text style={styles.commentsTitle}>Bình luận ({post.comment_count || 0})</Text>
-      </View>
     </View>
   );
 }
@@ -239,12 +236,22 @@ export default function PostDetailScreen({ route, navigation }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [commentLoading, setCommentLoading] = useState(true);
+  const [commentSort, setCommentSort] = useState("newest");
   const [commentText, setCommentText] = useState("");
   const [replyTo, setReplyTo] = useState(null);
   const [sending, setSending] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
   const commentInputRef = useRef(null);
   const listRef = useRef(null);
+
+  // Sorted comments — "newest" sorts by created_at desc
+  const sortedRootComments = useMemo(() => {
+    const roots = comments.filter(c => c.parent_id == null);
+    if (commentSort === "newest") {
+      return [...roots].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    return roots; // "all" = server/default ascending
+  }, [comments, commentSort]);
 
   const fetchPost = useCallback(async () => {
     try {
@@ -410,7 +417,6 @@ export default function PostDetailScreen({ route, navigation }) {
   const authorAvatar = isMyPost ? (user.avatar || post?.user_avatar) : post?.user_avatar;
 
   // Memoize root comments + post card — prevent re-create on every keystroke (flicker fix)
-  const rootComments = useMemo(() => comments.filter(c => c.parent_id == null), [comments]);
   const postCardEl = useMemo(() => (
     <PostCard post={post} user={user} authorName={authorName} authorAvatar={authorAvatar} media={media} dist={dist} formatTime={formatTime} togglePostLike={togglePostLike} commentInputRef={commentInputRef} />
   ), [post, user, authorName, authorAvatar, media, dist]);
@@ -435,10 +441,25 @@ export default function PostDetailScreen({ route, navigation }) {
       ) : (
         <FlatList
           ref={listRef}
-          data={rootComments}
+          data={sortedRootComments}
           keyExtractor={(item) => item.client_id || item.id || `temp_${item.created_at}_${item.content}`}
           style={{ flex: 1 }}
-          ListHeaderComponent={postCardEl}
+          ListHeaderComponent={
+            <>
+              {postCardEl}
+              {/* Sort toggle */}
+              <View style={styles.sortRow}>
+                <Text style={styles.sectionTitle}>Bình luận ({post?.comment_count || 0})</Text>
+                <TouchableOpacity
+                  style={styles.sortBtn}
+                  onPress={() => setCommentSort(prev => prev === "newest" ? "all" : "newest")}
+                >
+                  <Ionicons name={commentSort === "newest" ? "time" : "list"} size={14} color="#6B7280" />
+                  <Text style={styles.sortText}>{commentSort === "newest" ? "Mới nhất" : "Tất cả"}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          }
           contentContainerStyle={{ paddingBottom: 12 }}
           ListEmptyComponent={commentLoading ? (
             <View style={{ padding: 20, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
@@ -458,7 +479,7 @@ export default function PostDetailScreen({ route, navigation }) {
               onDelete={deleteComment}
             />
           )}
-          ItemSeparatorComponent={() => <View style={{ height: 4 }} />}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         />
       )}
 
@@ -509,10 +530,10 @@ const styles = StyleSheet.create({
   postCard: { backgroundColor: "#fff", paddingTop: 12 },
   postHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, marginBottom: 8 },
   postAvatar: {
-    width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primaryLight,
+    width: 42, height: 82, borderRadius: 21, backgroundColor: colors.primaryLight,
     alignItems: "center", justifyContent: "center", marginRight: 10,
   },
-  postAvatarImg: { width: 42, height: 42, borderRadius: 21 },
+  postAvatarImg: { width: 42, height: 82, borderRadius: 21 },
   postAvatarText: { fontSize: 17, fontWeight: "700", color: colors.primary },
   postUserName: { fontSize: 15, fontWeight: "700", color: "#000" },
   postLocation: { fontSize: 12, color: "#65676B" },
@@ -536,9 +557,11 @@ const styles = StyleSheet.create({
   },
   postActionText: { fontSize: 14, fontWeight: "600", color: "#65676B" },
 
-  // Comments header
-  commentsHeader: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 4 },
-  commentsTitle: { fontSize: 16, fontWeight: "700", color: "#050505" },
+  // Comments header (now in sortRow)
+  sortRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10, borderTopWidth: 6, borderTopColor: "#F0F2F5" },
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#050505" },
+  sortBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F0F2F5", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 16 },
+  sortText: { fontSize: 12, fontWeight: "600", color: "#6B7280" },
 
   // Comment components
   commentAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center" },
