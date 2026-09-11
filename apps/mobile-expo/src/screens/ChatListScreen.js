@@ -413,7 +413,7 @@ export default function ChatListScreen({ navigation }) {
     const badgeKind = item.match_type === 'province' ? 'province' : item.match_type === 'recent' ? 'recent' : 'gps';
     const addrText = item.address_label && item.address_label !== item.province
       ? item.address_label
-      : (item.last_message?.substring(0, 40) || 'Tham gia nhóm');
+      : 'Tham gia nhóm';
     const memberCount = item.members?.length || 0;
     // Dedup members by id (prevent duplicate avatars)
     const uniqueMembers = (item.members || []).filter((m, i, arr) => arr.findIndex(x => x.id === m.id) === i);
@@ -426,7 +426,11 @@ export default function ChatListScreen({ navigation }) {
         {/* Row 1: avatar + name + badge */}
         <View style={styles.grpTop}>
           <View style={styles.grpAvatar}>
-            <Ionicons name="people" size={26} color="#2563EB" />
+            {item.avatar ? (
+              <Image source={{ uri: item.avatar.startsWith("http") ? item.avatar : `https://timquanhday.de/uploads/${item.avatar}` }} style={{ width: 52, height: 52, borderRadius: 16 }} />
+            ) : (
+              <Ionicons name="people" size={26} color="#2563EB" />
+            )}
             {memberCount > 0 ? (
               <View style={styles.grpAvatarMiniStack}>
                 {uniqueMembers.slice(0, 2).map(m => (
@@ -465,8 +469,6 @@ export default function ChatListScreen({ navigation }) {
               </View>
             ))}
             <Text style={styles.grpMembersText}>{uniqueMembers.length > 0 ? `${uniqueMembers.length} thành viên` : 'Nhóm mới'}</Text>
-            {item.last_message_at ? <Text style={styles.grpDot} /> : null}
-            {item.last_message ? <Text style={styles.grpLastMsg} numberOfLines={1}>{item.last_message?.substring(0, 30)}</Text> : null}
           </View>
           <View style={styles.grpJoinBtn}>
             <Text style={styles.grpJoinText}>Tham gia</Text>

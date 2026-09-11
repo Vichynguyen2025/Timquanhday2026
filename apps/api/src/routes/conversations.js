@@ -67,7 +67,7 @@ router.get('/nearby-groups', authenticate, async (req, res) => {
 
     // Find groups user is NOT a member of (or soft-deleted)
     const candidateGroups = await query(`
-      SELECT DISTINCT c.id, c.name, c.type, c.lat as group_lat, c.lng as group_lng,
+      SELECT DISTINCT c.id, c.name, c.type, c.avatar, c.lat as group_lat, c.lng as group_lng,
         c.ward, c.district, c.province, c.street, c.created_at,
         (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_at
