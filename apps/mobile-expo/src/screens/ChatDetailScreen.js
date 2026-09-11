@@ -1210,6 +1210,7 @@ export default function ChatDetailScreen({ route, navigation }) {
                   </TouchableOpacity>
                 </View>
               )}
+          </>
           });
           }
 
