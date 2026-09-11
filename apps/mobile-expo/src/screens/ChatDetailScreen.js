@@ -190,6 +190,18 @@ export default function ChatDetailScreen({ route, navigation }) {
         if (cId2 === conversationId && !isGroup) {
           setCallerId(cId);
           setCallerName(callerName);
+          setCallState('incoming');
+        }
+      });
+      socket.on('call:connected', () => {
+        setCallState('active');
+        callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000);
+      });
+      socket.on('call:rejected', () => { cleanupCall(); });
+      socket.on('call:ended', () => { cleanupCall(); });
+      socket.on('call:busy', () => { cleanupCall(); });
+      return () => {
+        // Clear active conversation for badge tracking
         setActiveConversation(null);
         showSub.remove();
         hideSub.remove();
@@ -200,12 +212,10 @@ export default function ChatDetailScreen({ route, navigation }) {
         socket.off('call:incoming'); socket.off('call:connected');
         socket.off('call:rejected'); socket.off('call:ended');
         socket.off('call:busy');
-        socket.off('call:incoming'); socket.off('call:connected');
-        socket.off('call:rejected'); socket.off('call:ended');
-        socket.off('call:busy');
         socket.emit("conversation:leave", { conversationId });
         if (callTimerRef.current) clearInterval(callTimerRef.current);
       };
+
     }
   }, [conversationId, user?.id]);
 
