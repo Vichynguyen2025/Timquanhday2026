@@ -122,8 +122,18 @@ export default function NotificationsScreen() {
 
     if (item.type === "sos") {
       navigation.navigate("SOS");
+    } else if (postId) {
+      // For comment notifications, also extract commentId from data
+      let commentId = null;
+      if (item.type === "comment") {
+        try {
+          const data = typeof item.data === "string" ? JSON.parse(item.data) : (item.data || {});
+          commentId = data.commentId || null;
+        } catch {}
+      }
+      navigation.navigate("PostDetail", { postId, focusComment: commentId });
     } else {
-      navigation.navigate("Feed", postId ? { postId } : undefined);
+      navigation.navigate("Feed");
     }
   }
 
