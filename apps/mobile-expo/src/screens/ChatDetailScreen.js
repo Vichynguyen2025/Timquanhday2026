@@ -546,16 +546,6 @@ export default function ChatDetailScreen({ route, navigation }) {
             setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
           }
     
-  // ─── Voice Call Styles ──────────────────
-  callOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center", alignItems: "center",
-  },
-  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
-  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
-  callStatus: { fontSize: 15, color: "#ccc" },
-  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
-  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
     });
       }
     } catch (e) {}
@@ -1153,9 +1143,9 @@ export default function ChatDetailScreen({ route, navigation }) {
               )}
         </KeyboardAvoidingView>
     );
-    }
+  }
 
-  const styles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   headerBack: { padding: 6 },
@@ -1166,6 +1156,16 @@ export default function ChatDetailScreen({ route, navigation }) {
   headerName: { fontSize: 16, fontWeight: "600", color: "#000" },
   headerStatus: { fontSize: 12, color: "#65676B", marginTop: 1 },
   headerBtn: { padding: 6 },
+  // ─── Voice Call Styles ──────────────────
+  callOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center", alignItems: "center",
+  },
+  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
+  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
+  callStatus: { fontSize: 15, color: "#ccc" },
+  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
+  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   list: { flex: 1, backgroundColor: "#fff" },
   msgWrap: { marginBottom: 6 },
   msgAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 4 },
