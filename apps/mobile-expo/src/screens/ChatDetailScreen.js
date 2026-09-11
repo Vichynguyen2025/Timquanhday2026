@@ -54,13 +54,14 @@ export default function ChatDetailScreen({ route, navigation }) {
   const [viewerImages, setViewerImages] = useState([]);
   const [viewerIndex, setViewerIndex] = useState(0);
 
-  // ─── Voice call state ──────────────────────────────
-  const [callState, setCallState] = useState(null); // null | 'calling' | 'incoming' | 'active'
+  // ─── Voice call state
+  const [callState, setCallState] = useState(null);
   const [callerId, setCallerId] = useState(null);
   const [callerName, setCallerName] = useState('');
   const [callDuration, setCallDuration] = useState(0);
   const callTimerRef = useRef(null);
-  const [convMembers, setConvMembers] = useState([]);
+
+    const [convMembers, setConvMembers] = useState([]);
   const [deletedMessages, setDeletedMessages] = useState(new Set());
   const flatListRef = useRef(null);
   const inputRef = useRef(null);
@@ -69,26 +70,42 @@ export default function ChatDetailScreen({ route, navigation }) {
   const isOnline = otherUser?.id ? onlineUsers.has(otherUser.id) : (otherUser?.is_online === 1);
   const isBlocked = blockStatus === 'blocked_by_me' || blockStatus === 'blocked_by_them';
 
-  // ─── Voice call ────────────────────────────────────
-  const socket = getSocket();
+  // ─── Voice call ──────────────────────────────────
   function cleanupCall() {
     if (callTimerRef.current) clearInterval(callTimerRef.current);
     callTimerRef.current = null;
-    setCallDuration(0);
-    setCallState(null);
-    setCallerId(null);
-    setCallerName('');
+    setCallDuration(0); setCallState(null); setCallerId(null); setCallerName('');
   }
-
   function startVoiceCall() {
-    if (!otherUser?.id || isGroup) return;
+    if (!otherUser?.id) return;
     setCallState('calling');
     setCallerName(otherUser.name || name || 'Người dùng');
     const s = getSocket();
-    if (s && s.connected) {
-      s.emit('call:offer', { targetUserId: otherUser.id, conversationId, callerName: user?.name || 'Người dùng' });
-    }
+    if (s && s.connected) s.emit('call:offer', { targetUserId: otherUser.id, conversationId, callerName: (user?.name || 'Người dùng') });
   }
+  function acceptCall() {
+    const s = getSocket();
+    if (s && s.connected && callerId) s.emit('call:accept', { callerId });
+    setCallState('active');
+    callTimerRef.current = setInterval(() => setCallDuration(p => p + 1), 1000);
+  }
+  function rejectCall() {
+    const s = getSocket();
+    if (s && s.connected && callerId) s.emit('call:reject', { callerId });
+    cleanupCall();
+  }
+  function endCall() {
+    const s = getSocket();
+    if (s && s.connected && otherUser?.id) s.emit('call:end', { targetUserId: otherUser.id });
+    cleanupCall();
+  }
+  function formatDuration(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+
 
   function acceptCall() {
     const s = getSocket();
@@ -224,7 +241,7 @@ export default function ChatDetailScreen({ route, navigation }) {
       socket.on('call:rejected', () => { cleanupCall(); });
       socket.on('call:ended', () => { cleanupCall(); });
       socket.on('call:busy', () => { cleanupCall(); });
-      return () => {
+return () => {
         // Clear active conversation for badge tracking
         setActiveConversation(null);
         showSub.remove();
@@ -545,8 +562,7 @@ export default function ChatDetailScreen({ route, navigation }) {
           } else {
             setMessages((prev) => prev.map((m) => m.id === tempId ? { ...m, status: "failed" } : m));
           }
-    
-    });
+        });
       }
     } catch (e) {}
     setUploading(false);
@@ -1105,46 +1121,138 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           </View>
         </TouchableOpacity>
-        {callState && (
-                <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-                  <TouchableOpacity style={styles.callOverlay} activeOpacity={1} onPress={() => {}}>
-                    <View style={styles.callSheet}>
-                      <Ionicons name={callState === 'active' ? "call" : "call-outline"} size={48} color={callState === 'active' ? "#22C55E" : "#fff"} />
-                      <Text style={styles.callName}>{callState === 'calling' ? (otherUser?.name || name || 'Người dùng') : callerName}</Text>
-                      <Text style={styles.callStatus}>
-                        {callState === 'calling' ? "Đang gọi..." : callState === 'incoming' ? "Cuộc gọi đến" : callState === 'active' ? formatDuration(callDuration) : ""}
-                      </Text>
-                      <View style={styles.callActions}>
-                        {callState === 'incoming' && (
-                          <>
-                            <TouchableOpacity onPress={acceptCall} style={[styles.callBtn, { backgroundColor: "#22C55E" }]}>
-                              <Ionicons name="call" size={28} color="#fff" />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={rejectCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
-                              <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-                            </TouchableOpacity>
-                          </>
-                        )}
-                        {callState === 'active' && (
-                          <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
-                            <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-                          </TouchableOpacity>
-                        )}
-                        {callState === 'calling' && (
-                          <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
-                            <Ionicons name="close" size={28} color="#fff" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── Group Rename Modal ──── */}
+      <Modal visible={showGroupRename} transparent animationType="slide" onRequestClose={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <Text style={[styles.modalName, { marginBottom: 16 }]}>Đổi tên nhóm</Text>
+            <TextInput
+              style={{ width: "100%", backgroundColor: "#F9FAFB", borderRadius: 14, paddingHorizontal: 16, height: 50, fontSize: 15, color: "#000", borderWidth: 1, borderColor: "#E5E7EB" }}
+              placeholder="Tên nhóm mới"
+              placeholderTextColor="#9CA3AF"
+              value={groupNameEdit}
+              onChangeText={setGroupNameEdit}
+              maxLength={100}
+              autoFocus
+            />
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 16, width: "100%" }}>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center" }}
+                onPress={async () => {
+                  if (!groupNameEdit.trim()) return;
+                  await api.patch("/conversations/" + conversationId, { name: groupNameEdit.trim() });
+                  setConvInfo(prev => prev ? { ...prev, name: groupNameEdit.trim() } : prev);
+                  setShowGroupRename(false); setShowInfoModal(true);
+                  navigation.setParams({ name: groupNameEdit.trim() });
+                }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff" }}>Lưu</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center" }}
+                onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>Huỷ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ─── Image Viewer ──── */}
+      <Modal visible={showImageViewer} transparent animationType="fade" onRequestClose={() => setShowImageViewer(false)}>
+        <View style={{ flex: 1, backgroundColor: "#000" }}>
+          <TouchableOpacity onPress={() => setShowImageViewer(false)} style={{ position: "absolute", top: 50, left: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          {viewerImages.length > 1 && (
+            <View style={{ position: "absolute", top: 54, right: 16, zIndex: 10 }}>
+              <Text style={{ color: "#fff", fontSize: 14 }}>{viewerIndex + 1} / {viewerImages.length}</Text>
+            </View>
+          )}
+          {viewerImages.length > 0 && (
+            <FlatList
+              data={viewerImages}
+              horizontal pagingEnabled showsHorizontalScrollIndicator={false}
+              initialScrollIndex={viewerIndex}
+              getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
+              keyExtractor={(_, i) => String(i)}
+              renderItem={({ item }) => (
+                <View style={{ width: SCREEN_WIDTH, height: "100%", justifyContent: "center", alignItems: "center" }}>
+                  <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: SCREEN_WIDTH }} resizeMode="contain" />
                 </View>
               )}
-        </KeyboardAvoidingView>
-  );
-  }
+            />
+          )}
+        </View>
+                </Modal>
+                  {callState && (
+          <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+            <TouchableOpacity style={styles.callOverlay} activeOpacity={1} onPress={() => {}}>
+              <View style={styles.callSheet}>
+                <Ionicons name={callState === 'active' ? "call" : "call-outline"} size={48} color={callState === 'active' ? "#22C55E" : "#fff"} />
+                <Text style={styles.callName}>{callState === 'calling' ? (otherUser?.name || name || 'Người dùng') : callerName}</Text>
+                <Text style={styles.callStatus}>{callState === 'calling' ? "Đang gọi..." : callState === 'incoming' ? "Cuộc gọi đến" : callState === 'active' ? formatDuration(callDuration) : ""}</Text>
+                <View style={styles.callActions}>
+                  {callState === 'incoming' && (
+                    <>
+                      <TouchableOpacity onPress={acceptCall} style={[styles.callBtn, { backgroundColor: "#22C55E" }]}>
+                        <Ionicons name="call" size={28} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={rejectCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
+                        <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {callState === 'active' && (
+                    <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
+                      <Ionicons name="call-outline" size={28} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+                    </TouchableOpacity>
+                  )}
+                  {callState === 'calling' && (
+                    <TouchableOpacity onPress={endCall} style={[styles.callBtn, { backgroundColor: "#EF4444" }]}>
+                      <Ionicons name="close" size={28} color="#fff" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+</KeyboardAvoidingView>
+    
+              {/* ─── Voice Call Overlay ──────────────── */}
 
-const styles = StyleSheet.create({
+          });
+          }
+
+          // ─── Voice Call Styles ──────────────────
+          const callStyles = StyleSheet.create({
+            callOverlay: {
+              flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
+              justifyContent: "center", alignItems: "center",
+            },
+            callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
+            callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
+            callStatus: { fontSize: 15, color: "#ccc" },
+            callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
+            callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
+          
+  // ─── Voice Call Styles
+  callOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center", alignItems: "center",
+  },
+  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
+  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
+  callStatus: { fontSize: 15, color: "#ccc" },
+  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
+  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
+});
+
+          const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 4, paddingBottom: 10, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#E5E5E5" },
   headerBack: { padding: 6 },
@@ -1155,16 +1263,6 @@ const styles = StyleSheet.create({
   headerName: { fontSize: 16, fontWeight: "600", color: "#000" },
   headerStatus: { fontSize: 12, color: "#65676B", marginTop: 1 },
   headerBtn: { padding: 6 },
-  // ─── Voice Call Styles ──────────────────
-  callOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center", alignItems: "center",
-  },
-  callSheet: { alignItems: "center", gap: 16, paddingHorizontal: 40 },
-  callName: { fontSize: 22, fontWeight: "700", color: "#fff", marginTop: 12 },
-  callStatus: { fontSize: 15, color: "#ccc" },
-  callActions: { flexDirection: "row", gap: 40, marginTop: 24 },
-  callBtn: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   list: { flex: 1, backgroundColor: "#fff" },
   msgWrap: { marginBottom: 6 },
   msgAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: "center", justifyContent: "center", marginBottom: 4 },
@@ -1249,74 +1347,4 @@ const styles = StyleSheet.create({
   modalInfoText: { fontSize: 15, color: "#000", marginLeft: 12 },
   modalDone: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 10, backgroundColor: "#F0F2F5" },
   modalDoneText: { fontSize: 16, fontWeight: "600", color: colors.primary },
-})
-</KeyboardAvoidingView>
-      </Modal>
-
-      {/* ─── Group Rename Modal ──── */}
-      <Modal visible={showGroupRename} transparent animationType="slide" onRequestClose={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <Text style={[styles.modalName, { marginBottom: 16 }]}>Đổi tên nhóm</Text>
-            <TextInput
-              style={{ width: "100%", backgroundColor: "#F9FAFB", borderRadius: 14, paddingHorizontal: 16, height: 50, fontSize: 15, color: "#000", borderWidth: 1, borderColor: "#E5E7EB" }}
-              placeholder="Tên nhóm mới"
-              placeholderTextColor="#9CA3AF"
-              value={groupNameEdit}
-              onChangeText={setGroupNameEdit}
-              maxLength={100}
-              autoFocus
-            />
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 16, width: "100%" }}>
-              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center" }}
-                onPress={async () => {
-                  if (!groupNameEdit.trim()) return;
-                  await api.patch("/conversations/" + conversationId, { name: groupNameEdit.trim() });
-                  setConvInfo(prev => prev ? { ...prev, name: groupNameEdit.trim() } : prev);
-                  setShowGroupRename(false); setShowInfoModal(true);
-                  navigation.setParams({ name: groupNameEdit.trim() });
-                }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#fff" }}>Lưu</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: "#F3F4F6", alignItems: "center" }}
-                onPress={() => { setShowGroupRename(false); setShowInfoModal(true); }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>Huỷ</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* ─── Image Viewer ──── */}
-      <Modal visible={showImageViewer} transparent animationType="fade" onRequestClose={() => setShowImageViewer(false)}>
-        <View style={{ flex: 1, backgroundColor: "#000" }}>
-          <TouchableOpacity onPress={() => setShowImageViewer(false)} style={{ position: "absolute", top: 50, left: 16, zIndex: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
-          {viewerImages.length > 1 && (
-            <View style={{ position: "absolute", top: 54, right: 16, zIndex: 10 }}>
-              <Text style={{ color: "#fff", fontSize: 14 }}>{viewerIndex + 1} / {viewerImages.length}</Text>
-            </View>
-          )}
-          {viewerImages.length > 0 && (
-            <FlatList
-              data={viewerImages}
-              horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-              initialScrollIndex={viewerIndex}
-              getItemLayout={(_, index) => ({ length: SCREEN_WIDTH, offset: SCREEN_WIDTH * index, index })}
-              keyExtractor={(_, i) => String(i)}
-              renderItem={({ item }) => (
-                <View style={{ width: SCREEN_WIDTH, height: "100%", justifyContent: "center", alignItems: "center" }}>
-                  <Image source={{ uri: item }} style={{ width: SCREEN_WIDTH, height: SCREEN_WIDTH }} resizeMode="contain" />
-                </View>
-              )}
-            />
-          )}
-        </View>
-                </Modal>
-            </KeyboardAvoidingView>
-    
-              ;
+});
