@@ -300,9 +300,6 @@ export function setupSocket(io) {
         }
       }
     });
-  });
-
-
     // ─── Voice Call Signaling ───────────────────────
     socket.on('call:offer', ({ targetUserId, conversationId, callerName }) => {
       io.to(`user:${targetUserId}`).emit('call:incoming', {
@@ -328,4 +325,7 @@ export function setupSocket(io) {
 
     socket.on('call:busy', ({ callerId }) => {
       io.to(`user:${callerId}`).emit('call:busy', { userId });
-    });}
+    });
+  });
+
+}
