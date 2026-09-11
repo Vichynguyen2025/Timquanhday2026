@@ -1105,8 +1105,7 @@ export default function ChatDetailScreen({ route, navigation }) {
             </View>
           </View>
         </TouchableOpacity>
-        {/* ─── Voice Call Overlay ──────────────── */}
-              {callState && (
+        {callState && (
                 <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
                   <TouchableOpacity style={styles.callOverlay} activeOpacity={1} onPress={() => {}}>
                     <View style={styles.callSheet}>
@@ -1142,7 +1141,7 @@ export default function ChatDetailScreen({ route, navigation }) {
                 </View>
               )}
         </KeyboardAvoidingView>
-    );
+  );
   }
 
 const styles = StyleSheet.create({
