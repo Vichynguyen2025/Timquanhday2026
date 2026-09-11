@@ -401,32 +401,6 @@ router.post('/comments/:commentId/like', authenticate, async (req, res) => {
   }
 });
 
-// ─── Save / Unsave ──────────────────────────────
-router.post('/:id/save', authenticate, async (req, res) => {
-  try {
-    const post = await queryOne('SELECT * FROM posts WHERE id = ?', [req.params.id]);
-    if (!post) return res.status(404).json({ error: 'Post not found' });
-
-    const existing = await queryOne('SELECT * FROM post_saves WHERE post_id = ? AND user_id = ?', [req.params.id, req.user.id]);
-    let saved;
-    if (existing) {
-      await query('DELETE FROM post_saves WHERE post_id = ? AND user_id = ?', [req.params.id, req.user.id]);
-      await query('UPDATE posts SET save_count = GREATEST(COALESCE(save_count, 0) - 1, 0) WHERE id = ?', [req.params.id]);
-      saved = false;
-    } else {
-      await query('INSERT INTO post_saves (post_id, user_id) VALUES (?, ?)', [req.params.id, req.user.id]);
-      await query('UPDATE posts SET save_count = COALESCE(save_count, 0) + 1 WHERE id = ?', [req.params.id]);
-      saved = true;
-    }
-
-    if (io) io.emit(saved ? 'post:saved' : 'post:unsaved', { postId: req.params.id, userId: req.user.id, saved });
-
-    res.json({ saved });
-  } catch (err) {
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 // ─── Share ──────────────────────────────────────
 router.post('/:id/share', authenticate, async (req, res) => {
   try {
@@ -440,6 +414,46 @@ router.post('/:id/share', authenticate, async (req, res) => {
 
     res.json({ shared: true });
   } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ─── Save / Unsave post ──────────────────────────
+router.post('/:id/save', authenticate, async (req, res) => {
+  try {
+    const post = await queryOne('SELECT * FROM posts WHERE id = ?', [req.params.id]);
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    const existing = await queryOne('SELECT * FROM post_saves WHERE post_id = ? AND user_id = ?', [req.params.id, req.user.id]);
+    let saved;
+    if (existing) {
+      await query('DELETE FROM post_saves WHERE post_id = ? AND user_id = ?', [req.params.id, req.user.id]);
+      await query('UPDATE posts SET save_count = GREATEST(COALESCE(save_count, 0) - 1, 0) WHERE id = ?', [req.params.id]);
+      saved = false;
+    } else {
+      const saveId = crypto.randomUUID();
+      await query('INSERT INTO post_saves (id, post_id, user_id) VALUES (?, ?, ?)', [saveId, req.params.id, req.user.id]);
+      await query('UPDATE posts SET save_count = COALESCE(save_count, 0) + 1 WHERE id = ?', [req.params.id]);
+      saved = true;
+    }
+
+    const updatedPost = await queryOne(
+      `SELECT p.*, u.name as user_name, u.avatar as user_avatar,
+        COALESCE(p.like_count, 0) as like_count, COALESCE(p.comment_count, 0) as comment_count,
+        COALESCE(p.share_count, 0) as share_count, COALESCE(p.save_count, 0) as save_count,
+        (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked,
+        (SELECT COUNT(*) FROM post_saves WHERE post_id = p.id AND user_id = ?) as is_saved
+      FROM posts p JOIN users u ON p.user_id = u.id WHERE p.id = ?`,
+      [req.user.id, req.user.id, req.params.id]
+    );
+    if (updatedPost) {
+      updatedPost.is_liked = updatedPost.is_liked > 0;
+      updatedPost.is_saved = updatedPost.is_saved > 0;
+    }
+
+    res.json({ saved, save_count: updatedPost?.save_count || 0 });
+  } catch (err) {
+    console.error('[Save] Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

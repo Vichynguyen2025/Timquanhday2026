@@ -180,7 +180,7 @@ function CommentThread({ root, flat, onReply, onDelete, onLike, formatTime }) {
 }
 
 // ─── MAIN SCREEN ─────────────────────────────────
-function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTime, togglePostLike, commentInputRef }) {
+function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTime, togglePostLike, togglePostSave, commentInputRef }) {
   if (!post) return null;
   return (
     <View style={styles.postCard}>
@@ -197,6 +197,11 @@ function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTim
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 1 }}>
             {post.location_name ? <Text style={styles.postLocation} numberOfLines={1}>{post.location_name}</Text> : null}
             {dist ? <Text style={styles.postDistance}>📍 {dist}</Text> : null}
+            {post.ward || post.district || post.province ? (
+              <Text style={styles.postLocation} numberOfLines={1}>
+                📍{[post.ward, post.district, post.province].filter(Boolean).join(", ")}
+              </Text>
+            ) : null}
           </View>
         </View>
         <Text style={styles.postTime}>{formatTime(post.created_at)}</Text>
@@ -219,9 +224,9 @@ function PostCard({ post, user, authorName, authorAvatar, media, dist, formatTim
           <Ionicons name="chatbubble-outline" size={21} color="#000" />
           <Text style={styles.postActionText}>Bình luận</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.postAction}>
-          <Ionicons name="paper-plane-outline" size={21} color="#000" />
-          <Text style={styles.postActionText}>Chia sẻ</Text>
+        <TouchableOpacity onPress={togglePostSave} style={styles.postAction}>
+          <Ionicons name={post.is_saved ? "bookmark" : "bookmark-outline"} size={21} color={post.is_saved ? "#2563EB" : "#000"} />
+          <Text style={[styles.postActionText, post.is_saved && { color: "#2563EB" }]}>{post.is_saved ? "Đã lưu" : "Lưu"}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -410,6 +415,22 @@ export default function PostDetailScreen({ route, navigation }) {
     setLikeLoading(false);
   }
 
+  async function togglePostSave() {
+    if (!post) return;
+    const wasSaved = post.is_saved;
+    setPost(prev => prev ? { ...prev, is_saved: !wasSaved, save_count: (prev.save_count || 0) + (wasSaved ? -1 : 1) } : prev);
+    try {
+      const res = await api.post("/posts/" + post.id + "/save");
+      // Server response confirms
+      if (res.data?.saved !== undefined) {
+        setPost(prev => prev ? { ...prev, is_saved: res.data.saved, save_count: res.data.save_count ?? (prev.save_count || 0) } : prev);
+      }
+    } catch (e) {
+      // Rollback
+      setPost(prev => prev ? { ...prev, is_saved: wasSaved, save_count: (prev.save_count || 0) + (wasSaved ? 1 : -1) } : prev);
+    }
+  }
+
   const media = post ? resolveMediaUrl(post) : [];
   const dist = post ? formatDistance(post.distance) : null;
   const isMyPost = post && user && post.user_id === user.id;
@@ -418,8 +439,8 @@ export default function PostDetailScreen({ route, navigation }) {
 
   // Memoize root comments + post card — prevent re-create on every keystroke (flicker fix)
   const postCardEl = useMemo(() => (
-    <PostCard post={post} user={user} authorName={authorName} authorAvatar={authorAvatar} media={media} dist={dist} formatTime={formatTime} togglePostLike={togglePostLike} commentInputRef={commentInputRef} />
-  ), [post, user, authorName, authorAvatar, media, dist]);
+    <PostCard post={post} user={user} authorName={authorName} authorAvatar={authorAvatar} media={media} dist={dist} formatTime={formatTime} togglePostLike={togglePostLike} togglePostSave={togglePostSave} commentInputRef={commentInputRef} />
+  ), [post, user, authorName, authorAvatar, media, dist, togglePostLike, togglePostSave]);
 
   return (
     <KeyboardAvoidingView
@@ -530,10 +551,10 @@ const styles = StyleSheet.create({
   postCard: { backgroundColor: "#fff", paddingTop: 12 },
   postHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, marginBottom: 8 },
   postAvatar: {
-    width: 42, height: 82, borderRadius: 21, backgroundColor: colors.primaryLight,
+    width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primaryLight,
     alignItems: "center", justifyContent: "center", marginRight: 10,
   },
-  postAvatarImg: { width: 42, height: 82, borderRadius: 21 },
+  postAvatarImg: { width: 42, height: 42, borderRadius: 21 },
   postAvatarText: { fontSize: 17, fontWeight: "700", color: colors.primary },
   postUserName: { fontSize: 15, fontWeight: "700", color: "#000" },
   postLocation: { fontSize: 12, color: "#65676B" },
