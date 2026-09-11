@@ -311,33 +311,45 @@ export default function PostDetailScreen({ route, navigation }) {
   // Auto-focus comment input if navigated with focusComment
   useEffect(() => {
     if (focusComment && comments.length > 0) {
-      setTimeout(() => {
-        commentInputRef.current?.focus();
-        // Scroll to the specific comment
+      // Wait for FlatList to render, then scroll to the comment
+      const doScroll = (attempt = 0) => {
+        if (attempt > 5) return;
         const rootC = comments.filter(c => c.parent_id == null);
         const targetComment = comments.find(c => c.id === focusComment);
-        if (targetComment) {
-          // Find which root thread this comment belongs to
-          let rootId = targetComment.parent_id;
-          if (!rootId) {
-            // Root comment itself
-            const idx = rootC.findIndex(c => c.id === focusComment);
-            if (idx >= 0) listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
-          } else {
-            // Walk up to find the root
-            let parent = comments.find(c => c.id === rootId);
-            while (parent && parent.parent_id) {
-              parent = comments.find(c => c.id === parent.parent_id);
-            }
-            if (parent) {
-              const idx = rootC.findIndex(c => c.id === parent.id);
-              if (idx >= 0) listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
-            }
+        if (!targetComment) return;
+        let rootId = targetComment.parent_id;
+        let targetRoot = targetComment;
+        if (rootId) {
+          let parent = comments.find(c => c.id === rootId);
+          while (parent && parent.parent_id) {
+            parent = comments.find(c => c.id === parent.parent_id);
+          }
+          if (parent) targetRoot = parent;
+        }
+        const idx = rootC.findIndex(c => c.id === targetRoot.id);
+        if (idx >= 0) {
+          try {
+            listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.15 });
+          } catch (e) {
+            // Retry after items render
+            setTimeout(() => doScroll(attempt + 1), 300);
           }
         }
-      }, 800);
+      };
+      setTimeout(() => {
+        commentInputRef.current?.focus();
+        doScroll();
+      }, 600);
     }
   }, [focusComment, comments]);
+
+  // Handle scrollToIndex failure (FlatList retry)
+  const onScrollFailed = (info) => {
+    const { index, averageItemLength } = info;
+    if (averageItemLength > 0 && listRef.current) {
+      listRef.current.scrollToOffset({ offset: index * averageItemLength, animated: true });
+    }
+  };
 
   async function sendComment() {
     if (!commentText.trim() || !post) return;
@@ -444,6 +456,7 @@ export default function PostDetailScreen({ route, navigation }) {
           style={{ flex: 1 }}
           ListHeaderComponent={postCardEl}
           contentContainerStyle={{ paddingBottom: 12 }}
+          onScrollToIndexFailed={onScrollFailed}
           ListEmptyComponent={commentLoading ? (
             <View style={{ padding: 20, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
           ) : (
