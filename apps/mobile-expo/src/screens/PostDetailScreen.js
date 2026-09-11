@@ -417,17 +417,13 @@ export default function PostDetailScreen({ route, navigation }) {
 
   async function togglePostSave() {
     if (!post) return;
-    const wasSaved = post.is_saved;
-    setPost(prev => prev ? { ...prev, is_saved: !wasSaved, save_count: (prev.save_count || 0) + (wasSaved ? -1 : 1) } : prev);
     try {
       const res = await api.post("/posts/" + post.id + "/save");
-      // Server response confirms
       if (res.data?.saved !== undefined) {
         setPost(prev => prev ? { ...prev, is_saved: res.data.saved, save_count: res.data.save_count ?? (prev.save_count || 0) } : prev);
       }
     } catch (e) {
-      // Rollback
-      setPost(prev => prev ? { ...prev, is_saved: wasSaved, save_count: (prev.save_count || 0) + (wasSaved ? 1 : -1) } : prev);
+      // Will re-fetch or stay as-is
     }
   }
 

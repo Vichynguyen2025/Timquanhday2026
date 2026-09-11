@@ -301,4 +301,31 @@ export function setupSocket(io) {
       }
     });
   });
-}
+
+
+    // ─── Voice Call Signaling ───────────────────────
+    socket.on('call:offer', ({ targetUserId, conversationId, callerName }) => {
+      io.to(`user:${targetUserId}`).emit('call:incoming', {
+        callerId: userId,
+        callerName: callerName || 'Người dùng',
+        conversationId,
+      });
+    });
+
+    socket.on('call:accept', ({ callerId }) => {
+      io.to(`user:${callerId}`).emit('call:connected', { calleeId: userId });
+    });
+
+    socket.on('call:reject', ({ callerId }) => {
+      io.to(`user:${callerId}`).emit('call:rejected', { calleeId: userId });
+    });
+
+    socket.on('call:end', ({ targetUserId }) => {
+      if (targetUserId) {
+        io.to(`user:${targetUserId}`).emit('call:ended', { userId });
+      }
+    });
+
+    socket.on('call:busy', ({ callerId }) => {
+      io.to(`user:${callerId}`).emit('call:busy', { userId });
+    });}

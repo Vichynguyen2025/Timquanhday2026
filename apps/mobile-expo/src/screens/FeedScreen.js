@@ -577,12 +577,9 @@ export default function FeedScreen({ navigation }) {
               <Ionicons name="chatbubble-outline" size={21} color="#000" />
             </TouchableOpacity>
             <Text style={styles.actionCount}>{item.comment_count || 0}</Text>
-            <TouchableOpacity onPress={() => handleShare(item.id)} style={styles.postAction}>
-              <Ionicons name="paper-plane-outline" size={21} color="#000" />
-            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => toggleSave(item.id, item.is_saved)}>
-            <Ionicons name={item.is_saved ? "bookmark" : "bookmark-outline"} size={21} color={item.is_saved ? colors.primary : "#000"} />
+          <TouchableOpacity onPress={() => toggleSave(item.id, item.is_saved)} style={styles.postAction}>
+            <Ionicons name={item.is_saved ? "bookmark" : "bookmark-outline"} size={21} color={item.is_saved ? "#2563EB" : "#000"} />
           </TouchableOpacity>
         </View>
 
