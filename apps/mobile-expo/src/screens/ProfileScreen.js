@@ -56,7 +56,7 @@ export default function ProfileScreen({ navigation }) {
     setTabLoading(prev => ({ ...prev, [tab]: true }));
     try {
       let res;
-      if (tab === "posts") res = await api.get("/posts?mine=true");
+      if (tab === "posts") res = await api.get(`/posts?userId=${user.id}`);
       else if (tab === "saves") res = await api.get("/posts?filter=saved");
       else if (tab === "likes") res = await api.get("/posts?filter=liked");
       setTabItems(prev => ({ ...prev, [tab]: res.data?.posts || [] }));
@@ -291,7 +291,12 @@ export default function ProfileScreen({ navigation }) {
         ) : (
           <View style={styles.gridContainer}>
             {tabItems[activeTab].map(item => (
-              <TouchableOpacity key={item.id} style={styles.gridItem} activeOpacity={0.8}>
+              <TouchableOpacity
+                key={item.id}
+                style={styles.gridItem}
+                activeOpacity={0.8}
+                onPress={() => navigation.navigate("PostDetail", { postId: item.id, post: item })}
+              >
                 {item.media?.[0]?.url ? (
                   <Image source={{ uri: item.media[0].url }} style={styles.gridImage} />
                 ) : item.image_url ? (
@@ -301,6 +306,20 @@ export default function ProfileScreen({ navigation }) {
                     <Ionicons name="document-text" size={24} color="#9CA3AF" />
                   </View>
                 )}
+                <View style={styles.gridOverlay}>
+                  {(item.like_count || 0) > 0 && (
+                    <View style={styles.gridStat}>
+                      <Ionicons name="heart" size={12} color="#fff" />
+                      <Text style={styles.gridStatText}>{item.like_count}</Text>
+                    </View>
+                  )}
+                  {(item.comment_count || 0) > 0 && (
+                    <View style={styles.gridStat}>
+                      <Ionicons name="chatbubble" size={12} color="#fff" />
+                      <Text style={styles.gridStatText}>{item.comment_count}</Text>
+                    </View>
+                  )}
+                </View>
               </TouchableOpacity>
             ))}
           </View>
@@ -472,6 +491,9 @@ const styles = StyleSheet.create({
   gridItem: { width: (SCREEN_WIDTH - 32) / 3, aspectRatio: 1, padding: 4 },
   gridImage: { flex: 1, borderRadius: 8, backgroundColor: "#F3F4F6" },
   gridPlaceholder: { alignItems: "center", justifyContent: "center" },
+  gridOverlay: { position: "absolute", bottom: 6, left: 6, flexDirection: "row", gap: 8 },
+  gridStat: { flexDirection: "row", alignItems: "center", gap: 2 },
+  gridStatText: { fontSize: 11, fontWeight: "600", color: "#fff", textShadowColor: "rgba(0,0,0,0.6)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
   emptyTab: { alignItems: "center", paddingTop: 50, paddingBottom: 30 },
   emptyText: { fontSize: 14, color: "#9CA3AF", marginTop: 10 },
 
